@@ -71,8 +71,8 @@ export function evaluate(i: VerifyInput): VerifyResult {
       ...i.registeredDomains,
     ].filter((c) => getAddress(c.wallet) !== effective)
     const scored = companies.map((c) => ({ c, n: compareNames(i.payeeName, c.label) }))
-    const strong = byDomain ?? scored.find((x) => x.n.score === 1 && x.n.result !== 'NO_MATCH')?.c
-    const weak = scored.find((x) => x.n.result === 'CLOSE_MATCH' && x.n.score < 1)?.c
+    const strong = byDomain ?? scored.find((x) => (x.n.score === 1 || (x.n.homoglyph && x.n.result === 'CLOSE_MATCH')) && x.n.result !== 'NO_MATCH')?.c
+    const weak = scored.find((x) => x.n.result === 'CLOSE_MATCH' && x.n.score < 1 && !x.n.homoglyph)?.c
     if (strong) {
       reasons.push({ code: 'claims_verified_payee', detail: `Invoice claims to be ${strong.label} (verified wallet ${strong.wallet}) but pays an unverified address` })
       candidates.push('LOOKALIKE')
@@ -103,17 +103,17 @@ export function evaluate(i: VerifyInput): VerifyResult {
   if (senderDomain) {
     const own = p ? normalizeDomain(p.domain) : null
     if (!(own && inDomain(senderDomain, own))) {
-      const others = i.registeredDomains
+      const otherDomains = i.registeredDomains
         .filter((d) => !p || getAddress(d.wallet) !== getAddress(p.wallet))
         .map((d) => ({ ...d, domain: normalizeDomain(d.domain) }))
-      const look = findLookalikeDomain(senderDomain, others)
-      if (look) {
+      const owner = p ? otherDomains.find((d) => inDomain(senderDomain, d.domain)) : undefined
+      const look = owner ? null : findLookalikeDomain(senderDomain, otherDomains)
+      if (owner) {
+        reasons.push({ code: 'domain_of_other_payee', detail: `Invoice sent from ${senderDomain}, which belongs to ${owner.label}` })
+        candidates.push('CLOSE_MATCH')
+      } else if (look) {
         reasons.push({ code: 'lookalike_domain', detail: `${senderDomain} imitates ${look.domain} (${look.label})` })
         candidates.push(p ? 'CLOSE_MATCH' : 'LOOKALIKE')
-      } else if (p && i.registeredDomains.find((d) => getAddress(d.wallet) !== getAddress(p.wallet) && inDomain(senderDomain, normalizeDomain(d.domain)))) {
-        const other = i.registeredDomains.find((d) => getAddress(d.wallet) !== getAddress(p.wallet) && inDomain(senderDomain, normalizeDomain(d.domain)))!
-        reasons.push({ code: 'domain_of_other_payee', detail: `Invoice sent from ${senderDomain}, which belongs to ${other.label}` })
-        candidates.push('CLOSE_MATCH')
       } else if (own) {
         reasons.push({ code: 'domain_mismatch', detail: `Invoice sent from ${senderDomain}; registered domain is ${own}` })
       }

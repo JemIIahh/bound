@@ -8,12 +8,16 @@ const LEGAL_SUFFIXES = new Set([
 export type NameResult = 'MATCH' | 'CLOSE_MATCH' | 'NO_MATCH'
 
 export function normalizeName(raw: string): { normalized: string; homoglyph: boolean } {
-  const lowered = raw.normalize('NFKC').toLowerCase()
-  const onlyConfusableLetters = /[a-z]/.test(mapConfusables(lowered).text) && /[a-z]/.test(lowered)
+  const nfkc = raw.normalize('NFKC').toLowerCase()
+  // Invisible format characters (zero-width, soft hyphen, ...) are a spoofing vector.
+  const lowered = nfkc.replace(/\p{Cf}/gu, '')
+  const hadInvisible = lowered !== nfkc
   const mapped = mapConfusables(lowered)
+  const onlyConfusableLetters = /[a-z]/.test(mapped.text) && /[a-z]/.test(lowered)
   // A name mixing Latin letters with look-alike non-Latin letters is a homoglyph attempt.
-  const homoglyph = mapped.changed && onlyConfusableLetters
-  const cleaned = (homoglyph ? mapped.text : lowered)
+  const mixedScript = mapped.changed && onlyConfusableLetters
+  const homoglyph = mixedScript || hadInvisible
+  const cleaned = (mixedScript ? mapped.text : lowered)
     .replace(/&/g, ' and ')
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .replace(/\s+/g, ' ')

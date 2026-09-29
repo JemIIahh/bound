@@ -220,4 +220,36 @@ describe('evaluate', () => {
     expect(codes(r)).toContain('domain_of_other_payee')
     expect(r.verdict).toBe('CLOSE_MATCH')
   })
+
+  test.each(['\u200b', '\u200d', '\u00ad'])('invisible char %j in name is a strong claim: BLOCK', (ch) => {
+    const r = evaluate(unreg({ payeeName: `Ac${ch}me Ltd`, pinned: true, allowlisted: true }))
+    expect(r.verdict).toBe('LOOKALIKE')
+    expect(codes(r)).toContain('claims_verified_payee')
+    expect(decideAction(r)).toBe('BLOCK')
+  })
+  test('mixed-script close name is a strong claim', () => {
+    expect(evaluate(unreg({ payeeName: 'Асme Holdings' })).verdict).toBe('LOOKALIKE')
+  })
+  test('claims path ignores a company whose wallet is the destination', () => {
+    const r = evaluate(input({ payee: null, address: acmeWallet, resolved: { effective: acmeWallet, isVirtual: false, masterId: null, registered: true }, payeeName: 'Acme Ltd', knownWallets: [{ wallet: acmeWallet, label: 'Acme Ltd', source: 'registry' }] }))
+    expect(codes(r)).not.toContain('claims_verified_payee')
+    expect(r.verdict).toBe('NO_MATCH')
+  })
+  test('other-payee domain is checked before fuzzy lookalike', () => {
+    const acneWallet = ('0x' + 'ee'.repeat(20)) as `0x${string}`
+    const acmiWallet = ('0x' + 'dd'.repeat(20)) as `0x${string}`
+    const r = evaluate(input({
+      address: acneWallet, resolved: { effective: acneWallet, isVirtual: false, masterId: null, registered: true },
+      payeeName: 'Acne Inc', senderDomain: 'acme.com',
+      payee: { ...acme, wallet: acneWallet, legalName: 'Acne Inc', domain: 'acne.com' },
+      knownWallets: [],
+      registeredDomains: [
+        { domain: 'acmi.com', label: 'Acmi Corp', wallet: acmiWallet },
+        { domain: 'acme.com', label: 'Acme Ltd', wallet: acmeWallet },
+        { domain: 'acne.com', label: 'Acne Inc', wallet: acneWallet },
+      ],
+    }))
+    expect(r.reasons.find((x) => x.code === 'domain_of_other_payee')?.detail).toContain('Acme Ltd')
+    expect(codes(r)).not.toContain('lookalike_domain')
+  })
 })
