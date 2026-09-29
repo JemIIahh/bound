@@ -19,10 +19,11 @@ const HASH = ('0x' + 'cd'.repeat(32)) as `0x${string}`
 const pay = vi.mocked(payWithKey)
 const forced = vi.mocked(forceSendWithKey)
 
-function opsWith(pub: any = {}) {
+function opsWith(pub: any = {}, env: { network?: 'testnet' | 'mainnet'; labEnabled?: boolean } = {}) {
   const db = createDb(':memory:'); migrate(db)
   db.insert(orgs).values({ id: 'o', name: 'x', rootAddress: root, agentKeyAddress: '0x' + '44'.repeat(20), agentKeyEnc: encryptSecret(generatePrivateKey(), secret), tokenHash: 'h', limitBase: '1', periodSeconds: 60, authorized: 1, createdAt: 1 }).run()
-  return productionChainOps({ db, chain: { network: 'testnet', token: '0x20c0000000000000000000000000000000000000', pub } as any, config: { serverSecret: secret } as any })
+  const network = env.network ?? 'testnet'
+  return productionChainOps({ db, chain: { network, token: '0x20c0000000000000000000000000000000000000', pub } as any, config: { serverSecret: secret, network, labEnabled: !!env.labEnabled } as any })
 }
 const send = (ops: ReturnType<typeof opsWith>, force = false) => ops.send({ orgId: 'o', to, amount: 1n, memo: '0x00', force })
 
@@ -58,7 +59,16 @@ describe('production send', () => {
     const r = await send(opsWith({ getTransactionReceipt: async () => ({ status: 'reverted' }) }), true)
     expect(r).toEqual({ txHash: HASH, status: 'reverted' })
     expect(forced.mock.calls[0]![0]).toMatchObject({ to, amount: 1n })
+    expect(forced.mock.calls[0]![1]).toEqual({ allowMainnet: false })
     expect(pay).not.toHaveBeenCalled()
+  })
+  test('a forced send may reach mainnet only when the network is mainnet AND the lab is explicitly enabled', async () => {
+    const receipt = { getTransactionReceipt: async () => ({ status: 'reverted' }) }
+    forced.mockResolvedValue({ txHash: HASH, receiptTxHash: HASH, status: 'reverted' })
+    await send(opsWith(receipt, { network: 'mainnet', labEnabled: false }), true)
+    await send(opsWith(receipt, { network: 'mainnet', labEnabled: true }), true)
+    await send(opsWith(receipt, { network: 'testnet', labEnabled: true }), true)
+    expect(forced.mock.calls.map((c) => c[1])).toEqual([{ allowMainnet: false }, { allowMainnet: true }, { allowMainnet: false }])
   })
   test('a forced send rejected before broadcast is "not sent"', async () => {
     forced.mockRejectedValueOnce(new PaymentRejected('Other', 'nonce fetch failed'))

@@ -5,7 +5,7 @@ import { getAddress, isAddress, isHex, type Address, type Hex } from 'viem'
 import { eq } from 'drizzle-orm'
 import { memoFromInvoice, normalizeDomain, parseAmount } from '@bound/core'
 import { newId } from '../crypto'
-import { invoices, payments } from '../db/schema'
+import { invoices, orgs, payments } from '../db/schema'
 import { logEvent, nowSeconds } from '../services/events'
 import { withOrgLock } from '../services/mutex'
 import { isUniqueViolation, payInvoice, PaymentNotSent, type ServiceDeps } from '../services/payments'
@@ -66,35 +66,79 @@ export async function recordInvoiceFields(deps: Pick<ServiceDeps, 'db'>, invoice
 
 type RawTransferResult =
   | { ok: false; error: string; txHash?: string }
-  | { ok: false; chain: 'rejected'; code: string; txHash: Hex }
+  | { ok: false; chain: 'not_sent'; reason: string }
   | { ok: false; chain: 'not_sent'; code: string; error: string }
+  | { ok: false; chain: 'rejected'; code: string; txHash: Hex }
   | { ok: false; chain: 'unknown'; error: string; txHash?: Hex }
   | { ok: true; chain: 'accepted'; txHash: Hex }
 
+export type RawTransferOptions = { receiptTimeoutMs?: number; receiptPollMs?: number }
+
+/** Keychain refusals Tempo enforces at execution. The lab only ever force-sends a payment the preflight says one of these will stop. */
+const TEMPO_WILL_REFUSE = new Set(['CallNotAllowed', 'SpendingLimitExceeded'])
+export const LAB_GATE_REASON = 'lab only force-sends payments Tempo will refuse'
+/** Upper bound on waiting for the receipt of a possibly-broadcast lab transfer. */
+const RECEIPT_TIMEOUT_MS = 60_000
+const RECEIPT_POLL_MS = 2_000
+
+type LabTransfer = { orgId: string; invoiceId: string; to: Address; amount: bigint; memo: Hex }
+type Locked = { kind: 'done'; result: RawTransferResult } | { kind: 'maybe_sent'; paymentId: string; txHash?: Hex; code?: string }
+
 /**
- * ATTACK LAB ONLY ("guard off"): sends the transfer the model asked for with Bound's checks off.
- * No payee verification, no preflight gate: the signed transaction is broadcast with a fixed gas
- * limit (no simulation), so Tempo's keychain is the only thing that can stop it. At most one
- * transfer per lab invoice. The preflight result is used only to name the chain's reason (a mined
- * receipt carries no revert reason).
+ * ATTACK LAB ONLY ("guard off"): Bound's payee checks are off, so the demo can show Tempo itself
+ * refusing the payment. Safety rails that stay on:
+ * - lab invoices of an authorized org only, and at most one transfer per invoice;
+ * - it broadcasts ONLY when the preflight shows a keychain refusal (CallNotAllowed /
+ *   SpendingLimitExceeded). A payment Tempo would accept (or an unknown preflight) is never sent,
+ *   so the lab cannot move funds;
+ * - the send is forced (no simulation) so the refusal is a mined, reverted tx with a public hash;
+ * - it runs under the per-org lock (no nonce race with payInvoice); the lock is not re-entrant,
+ *   so nothing inside it may call payInvoice. A possibly-broadcast outcome is settled after the
+ *   lock is released, by a bounded (≤ 60 s) receipt wait.
  */
-export async function rawTransfer(deps: ServiceDeps, invoiceId: string, p: { to: string; amount: string; memo: string }): Promise<RawTransferResult> {
+export async function rawTransfer(deps: ServiceDeps, invoiceId: string, p: { to: string; amount: string; memo: string }, opts: RawTransferOptions = {}): Promise<RawTransferResult> {
   const inv = loadInvoice(deps, invoiceId)
   if (!inv || inv.lab !== 1) return { ok: false, error: 'raw_transfer is only available in the attack lab' }
+  const org = deps.db.select().from(orgs).where(eq(orgs.id, inv.orgId)).get()
+  if (!org?.authorized) return { ok: false, error: 'The org has not authorized its agent key yet' }
   if (!isAddress(p.to.trim())) return { ok: false, error: 'bad address' }
   const to = getAddress(p.to.trim()) as Address
   const amt = positiveAmount(p.amount)
   if (!amt.ok) return { ok: false, error: amt.error }
-  const amount = amt.amount
-  const memo = memoFromInvoice(p.memo.trim() || inv.invoiceNo?.trim() || inv.id)
+  const t: LabTransfer = { orgId: inv.orgId, invoiceId, to, amount: amt.amount, memo: memoFromInvoice(p.memo.trim() || inv.invoiceNo?.trim() || inv.id) }
 
-  // Same per-org lock as payInvoice: the forced send must not race the agent key's nonce with a real
-  // payment. The lock is not re-entrant, so nothing in here may call payInvoice.
-  return withOrgLock(inv.orgId, () => rawTransferLocked(deps, { orgId: inv.orgId, invoiceId, to, amount, memo }))
+  const out = await withOrgLock(t.orgId, () => rawTransferLocked(deps, t))
+  return out.kind === 'done' ? out.result : settleMaybeSent(deps, t, out, opts)
 }
 
-async function rawTransferLocked(deps: ServiceDeps, p: { orgId: string; invoiceId: string; to: Address; amount: bigint; memo: Hex }): Promise<RawTransferResult> {
-  const { orgId, invoiceId, to, amount, memo } = p
+const labDetail = (t: LabTransfer) => ({ to: t.to, amount: t.amount.toString(), lab: true, guardOff: true })
+const setPayment = (deps: ServiceDeps, paymentId: string, v: Partial<typeof payments.$inferInsert>) =>
+  deps.db.update(payments).set(v).where(eq(payments.id, paymentId)).run()
+
+function recordRejected(deps: ServiceDeps, t: LabTransfer, paymentId: string, txHash: Hex, code: string): RawTransferResult {
+  setPayment(deps, paymentId, { status: 'reverted', txHash })
+  setInvoice(deps, t.invoiceId, { status: 'blocked' })
+  logEvent(deps.db, { orgId: t.orgId, kind: 'chain_rejected', invoiceId: t.invoiceId, txHash, detail: { ...labDetail(t), code } })
+  return { ok: false, chain: 'rejected', code, txHash }
+}
+
+function recordPaid(deps: ServiceDeps, t: LabTransfer, paymentId: string, txHash: Hex): RawTransferResult {
+  setPayment(deps, paymentId, { status: 'confirmed', txHash })
+  setInvoice(deps, t.invoiceId, { status: 'paid' })
+  logEvent(deps.db, { orgId: t.orgId, kind: 'paid', invoiceId: t.invoiceId, txHash, detail: labDetail(t) })
+  return { ok: true, chain: 'accepted', txHash }
+}
+
+/** Outcome still unknown: keep the payment 'unknown' (reconcilable by hash) and make the invoice visibly 'unconfirmed'. */
+function recordUnconfirmed(deps: ServiceDeps, t: LabTransfer, paymentId: string, txHash?: Hex): RawTransferResult {
+  setPayment(deps, paymentId, { status: 'unknown', txHash: txHash ?? null })
+  setInvoice(deps, t.invoiceId, { status: 'unconfirmed' })
+  logEvent(deps.db, { orgId: t.orgId, kind: 'unconfirmed', invoiceId: t.invoiceId, txHash: txHash ?? null, detail: labDetail(t) })
+  return { ok: false, chain: 'unknown', error: 'Outcome unknown: no receipt yet', ...(txHash ? { txHash } : {}) }
+}
+
+async function rawTransferLocked(deps: ServiceDeps, t: LabTransfer): Promise<Locked> {
+  const { orgId, invoiceId, to, amount, memo } = t
   // Claim the invoice's single payment slot (unique index) before anything goes on chain.
   const paymentId = newId('pay')
   try {
@@ -102,53 +146,61 @@ async function rawTransferLocked(deps: ServiceDeps, p: { orgId: string; invoiceI
   } catch (e) {
     if (!isUniqueViolation(e)) throw e
     const prior = loadPayment(deps, invoiceId)
-    return { ok: false, error: 'A transfer was already attempted for this invoice', ...(prior?.txHash ? { txHash: prior.txHash } : {}) }
+    return { kind: 'done', result: { ok: false, error: 'A transfer was already attempted for this invoice', ...(prior?.txHash ? { txHash: prior.txHash } : {}) } }
   }
-  const setPayment = (v: Partial<typeof payments.$inferInsert>) => deps.db.update(payments).set(v).where(eq(payments.id, paymentId)).run()
-  const detail = { to, amount: amount.toString(), lab: true, guardOff: true }
 
   let pre: { ok: true } | { ok: false; code: string; message: string } | null = null
-  try { pre = await deps.ops.preflight({ orgId, to, amount, memo }) } catch { pre = null }
-  const code = pre && !pre.ok ? pre.code : undefined
-
-  const unknown = (txHash: Hex | undefined): RawTransferResult => {
-    setPayment({ status: 'unknown', txHash: txHash ?? null })
-    setInvoice(deps, invoiceId, { status: 'processing' })
-    return { ok: false, chain: 'unknown', error: 'Outcome unknown (RPC error after broadcast)', ...(txHash ? { txHash } : {}) }
+  try { pre = await deps.ops.preflight({ orgId, to, amount, memo }) } catch (e) { console.error('[lab] preflight errored', invoiceId, e) }
+  if (!pre || pre.ok || !TEMPO_WILL_REFUSE.has(pre.code)) {
+    // Tempo might accept this payment (or we cannot tell): the lab never sends it.
+    setPayment(deps, paymentId, { status: 'rejected' })
+    setInvoice(deps, invoiceId, { status: 'blocked' })
+    logEvent(deps.db, { orgId, kind: 'blocked', invoiceId, detail: { ...labDetail(t), reason: 'lab_gate', preflight: pre ? (pre.ok ? 'ok' : pre.code) : 'error' } })
+    return { kind: 'done', result: { ok: false, chain: 'not_sent', reason: LAB_GATE_REASON } }
   }
+  const code = pre.code
 
   let sent: { txHash: Hex; status: 'success' | 'reverted' }
   try {
     sent = await deps.ops.send({ orgId, to, amount, memo, force: true })
   } catch (e) {
     if (e instanceof PaymentNotSent) {
-      setPayment({ status: 'rejected' })
+      setPayment(deps, paymentId, { status: 'rejected' })
       setInvoice(deps, invoiceId, { status: 'failed' })
-      logEvent(deps.db, { orgId, kind: 'chain_rejected', invoiceId, detail: { ...detail, code: e.code, broadcast: false } })
-      return { ok: false, chain: 'not_sent', code: e.code, error: 'The transfer was not broadcast' }
+      logEvent(deps.db, { orgId, kind: 'chain_rejected', invoiceId, detail: { ...labDetail(t), code: e.code, broadcast: false } })
+      return { kind: 'done', result: { ok: false, chain: 'not_sent', code: e.code, error: 'The transfer was not broadcast' } }
     }
     console.error('[lab] raw transfer outcome unknown', invoiceId, e)
     const maybe = (e as { txHash?: unknown } | null)?.txHash
-    return unknown(typeof maybe === 'string' && isHex(maybe) ? maybe : undefined)
+    return { kind: 'maybe_sent', paymentId, code, ...(typeof maybe === 'string' && isHex(maybe) ? { txHash: maybe } : {}) }
   }
 
   // Explicit mapping, as in payInvoice: only 'reverted' is a chain rejection and only 'success' moved money.
-  if (sent?.status === 'reverted') {
-    const reason = code ?? 'Reverted'
-    setPayment({ status: 'reverted', txHash: sent.txHash })
-    setInvoice(deps, invoiceId, { status: 'blocked' })
-    logEvent(deps.db, { orgId, kind: 'chain_rejected', invoiceId, txHash: sent.txHash, detail: { ...detail, code: reason } })
-    return { ok: false, chain: 'rejected', code: reason, txHash: sent.txHash }
-  }
-  if (sent?.status === 'success') {
-    setPayment({ status: 'confirmed', txHash: sent.txHash })
-    setInvoice(deps, invoiceId, { status: 'paid' })
-    logEvent(deps.db, { orgId, kind: 'paid', invoiceId, txHash: sent.txHash, detail })
-    return { ok: true, chain: 'accepted', txHash: sent.txHash }
-  }
+  if (sent?.status === 'reverted') return { kind: 'done', result: recordRejected(deps, t, paymentId, sent.txHash, code) }
+  if (sent?.status === 'success') return { kind: 'done', result: recordPaid(deps, t, paymentId, sent.txHash) } // defensive: the gate should prevent this
   console.error('[lab] unrecognised send result; treating as unknown', invoiceId, sent)
   const hash = sent?.txHash
-  return unknown(typeof hash === 'string' && isHex(hash) ? hash : undefined)
+  return { kind: 'maybe_sent', paymentId, code, ...(typeof hash === 'string' && isHex(hash) ? { txHash: hash } : {}) }
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+/** Resolves to null if `p` does not settle within `ms` (or rejects). */
+const within = <T>(p: Promise<T>, ms: number) =>
+  Promise.race([p.catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), Math.max(0, ms)))])
+
+/** Bounded wait for the receipt of a possibly-broadcast lab transfer (runs outside the org lock). */
+async function settleMaybeSent(deps: ServiceDeps, t: LabTransfer, m: Extract<Locked, { kind: 'maybe_sent' }>, opts: RawTransferOptions): Promise<RawTransferResult> {
+  if (!m.txHash) return recordUnconfirmed(deps, t, m.paymentId)
+  const timeout = Math.min(opts.receiptTimeoutMs ?? RECEIPT_TIMEOUT_MS, RECEIPT_TIMEOUT_MS)
+  const poll = opts.receiptPollMs ?? RECEIPT_POLL_MS
+  const deadline = Date.now() + timeout
+  while (Date.now() < deadline) {
+    const st = await within(deps.ops.getReceipt(m.txHash), deadline - Date.now())
+    if (st === 'reverted') return recordRejected(deps, t, m.paymentId, m.txHash, m.code ?? 'Reverted')
+    if (st === 'success') return recordPaid(deps, t, m.paymentId, m.txHash)
+    await sleep(Math.min(poll, Math.max(0, deadline - Date.now())))
+  }
+  return recordUnconfirmed(deps, t, m.paymentId, m.txHash)
 }
 
 /** The stored verdict's reasons, so pay/approval results carry them verbatim to the model and the log. */
@@ -218,8 +270,11 @@ export function buildTools(deps: ServiceDeps, invoiceId: string, mode: AgentMode
       if (!isAddress(i.address.trim())) return { verdict: 'NO_MATCH', action: 'BLOCK', reasons: [{ code: 'invalid_address', detail: 'Not a valid 0x address' }] }
       const address = getAddress(i.address.trim())
       const v = await verifyPayee(deps, { address, payeeName: i.payeeName, senderDomain: i.senderDomain || undefined, orgId: inv.orgId })
-      // Show the verdict on the invoice when it is about the recorded payment address (BLOCK never reaches payInvoice).
-      if (inv.address && inv.address.toLowerCase() === address.toLowerCase() && EDITABLE.has(inv.status)) {
+      // Show the verdict on the invoice (BLOCK never reaches payInvoice), but only when the model checked
+      // exactly the recorded fields: a verdict for other inputs must not be displayed as this invoice's.
+      const senderDomain = i.senderDomain ? normalizeDomain(i.senderDomain) || null : null
+      const sameFields = inv.address === address && inv.payeeName === i.payeeName.trim() && (inv.senderDomain ?? null) === senderDomain
+      if (sameFields && EDITABLE.has(inv.status)) {
         setInvoice(deps, invoiceId, { verdictJson: JSON.stringify(v), action: v.action })
       }
       return v

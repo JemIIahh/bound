@@ -3,7 +3,8 @@ import { Abis, Account } from 'viem/tempo'
 import { decodeTempoError, type TempoErrorCode } from './errors'
 import { getNetwork, type EstimateClient, type NetworkName } from './networks'
 
-const TEMPO_CHAIN_IDS = [4217, 42431]
+const TEMPO_MAINNET_ID = 4217
+const TEMPO_CHAIN_IDS = [TEMPO_MAINNET_ID, 42431]
 
 export function assertTempoClient(client: { chain?: { id: number } | null }): void {
   const id = client.chain?.id
@@ -35,6 +36,8 @@ export function agentAccount(privateKey: Hex, root: Address) {
 }
 
 type AgentAccount = ReturnType<typeof agentAccount>
+/** The client forceSendWithKey drives (injectable so tests can record every RPC call). */
+export type ForceSendClient = ReturnType<typeof clientFor>
 
 function clientFor(network: NetworkName, account: AgentAccount) {
   const n = getNetwork(network)
@@ -110,9 +113,20 @@ export const FORCE_SEND_GAS = 1_000_000n
  * by scripts/testnet-guard-off.ts). Never use this for real payments.
  * Throws PaymentRejected (nothing sent) or PaymentOutcomeUnknown (broadcast began; check txHash).
  */
-export async function forceSendWithKey(p: { network: NetworkName; account: AgentAccount; token: Address; to: Address; amount: bigint; memo: Hex; gas?: bigint }): Promise<Awaited<ReturnType<typeof payWithKey>>> {
-  const client = clientFor(p.network, p.account)
+export async function forceSendWithKey(
+  p: { network: NetworkName; account: AgentAccount; token: Address; to: Address; amount: bigint; memo: Hex; gas?: bigint },
+  opts: { allowMainnet?: boolean; client?: ForceSendClient } = {},
+): Promise<Awaited<ReturnType<typeof payWithKey>>> {
+  // Refuse before building a client or touching the network.
+  const expected = getNetwork(p.network).chain.id
+  if (expected === TEMPO_MAINNET_ID && !opts.allowMainnet) {
+    throw new PaymentRejected('Other', 'Refusing to force-send on Tempo mainnet (4217) without allowMainnet')
+  }
+  const client = opts.client ?? clientFor(p.network, p.account)
   assertTempoClient(client)
+  if (client.chain?.id !== expected) {
+    throw new PaymentRejected('Other', `Refusing to force-send: client chain ${client.chain?.id} is not ${p.network} (${expected})`)
+  }
   let serialized: Hex
   try {
     const [nonce, fees] = await Promise.all([

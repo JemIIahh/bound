@@ -314,6 +314,13 @@ describe('duplicate invoices', () => {
     expect((await payInvoice(deps as any, 'inv2')).status).toBe('paid')
     expect(ops.send).toHaveBeenCalledTimes(2)
   })
+  test('attack-lab payments never make a real invoice a duplicate', async () => {
+    const { deps, ops, db } = dupSetup({ address: acme, invoiceNo: 'INV-1042' })
+    db.update(invoices).set({ lab: 1 }).where(eq(invoices.id, 'inv1')).run()
+    expect((await payInvoice(deps as any, 'inv1')).status).toBe('paid') // a lab (guarded) payment with the same memo + payee
+    expect((await payInvoice(deps as any, 'inv2')).status).toBe('paid')
+    expect(ops.send).toHaveBeenCalledTimes(2)
+  })
   test('duplicates are matched on the effective payee (a virtual address of the same master)', async () => {
     const virtual = '0x83196cf2' + 'fd'.repeat(10) + '000000000001'
     const { deps, ops } = dupSetup({ address: virtual, invoiceNo: 'INV-1042' })
