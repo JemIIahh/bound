@@ -4,7 +4,8 @@ import { Abis } from 'viem/tempo'
 import { eq } from 'drizzle-orm'
 import { createDb, migrate } from '../src/db/client'
 import { approvals, events, invoices, orgs, payees, pins } from '../src/db/schema'
-import { confirmApproval, prepareApproval, rejectApproval, requestApproval } from '../src/services/approvals'
+import { approvalStatus, confirmApproval, prepareApproval, rejectApproval, requestApproval } from '../src/services/approvals'
+import { getOverview } from '../src/services/orgs'
 import { payInvoice } from '../src/services/payments'
 
 const root = '0x3333333333333333333333333333333333333333'
@@ -75,6 +76,56 @@ describe('prepare guards', () => {
     const { deps } = seed()
     await expect(prepareApproval(deps as any, 'org2', 'ap1')).rejects.toMatchObject({ status: 404 })
   })
+  test('uses the effective address: a virtual address whose master is revoked is refused', async () => {
+    const { deps, db } = seed()
+    const virtual = '0x83196cf2' + 'fd'.repeat(10) + '000000000001'
+    db.update(approvals).set({ wallet: virtual }).where(eq(approvals.id, 'ap1')).run()
+    db.insert(payees).values({ wallet: a, legalName: 'Acme Ltd', domain: 'acme.com', lei: '', masterId: '0x83196cf2', level: 1, activeFrom: 1, revokedAt: 9, evidenceHash: '0x00', updatedBlock: 1 }).run()
+    deps.ops.resolveRecipient = vi.fn(async () => ({ effective: a, isVirtual: true, masterId: '0x83196cf2', registered: true }))
+    await expect(prepareApproval(deps as any, 'org1', 'ap1')).rejects.toMatchObject({ status: 409 })
+    expect(deps.ops.resolveRecipient).toHaveBeenCalled()
+  })
+})
+
+describe('carried wallets', () => {
+  test('`carried` lists exactly the wallets included only because other approvals are prepared', async () => {
+    const { deps } = seed()
+    const p1 = await prepareApproval(deps as any, 'org1', 'ap1')
+    expect(p1).toMatchObject({ recipients: [root, a], carried: [] })
+    const p2 = await prepareApproval(deps as any, 'org1', 'ap2')
+    expect(p2).toMatchObject({ recipients: [root, a, b], carried: [a] })
+    // once a is live on the allowlist it is no longer "carried"
+    deps.ops.readAllowlist = vi.fn(async () => [root, a] as any)
+    const p3 = await prepareApproval(deps as any, 'org1', 'ap2')
+    expect(p3).toMatchObject({ recipients: [root, a, b], carried: [] })
+  })
+  test('a prepared approval older than 15 minutes is not carried and reads as pending', async () => {
+    const { deps, db } = seed()
+    await prepareApproval(deps as any, 'org1', 'ap1')
+    db.update(approvals).set({ preparedAt: Math.floor(Date.now() / 1000) - 16 * 60 }).where(eq(approvals.id, 'ap1')).run()
+    const p2 = await prepareApproval(deps as any, 'org1', 'ap2')
+    expect(p2).toMatchObject({ recipients: [root, b], carried: [] })
+    const ap1 = db.select().from(approvals).where(eq(approvals.id, 'ap1')).get()!
+    expect(approvalStatus(ap1)).toBe('pending')
+    deps.ops.remainingLimit = vi.fn(async () => 0n)
+    const ov = await getOverview(deps as any, 'org1')
+    expect(Object.fromEntries(ov.approvals.map((x: any) => [x.id, x.status]))).toEqual({ ap1: 'pending', ap2: 'prepared' })
+    // and it can be prepared again
+    const again = await prepareApproval(deps as any, 'org1', 'ap1')
+    expect(again).toMatchObject({ recipients: [root, b, a], carried: [b] })
+  })
+  test('successor replacement covers carried wallets too: a superseded wallet is never re-added', async () => {
+    const { deps, db } = seed()
+    const c = '0x7777777777777777777777777777777777777777'
+    db.insert(approvals).values({ id: 'ap3', orgId: 'org1', invoiceId: 'i-ap3', wallet: c, label: c, verdictJson: JSON.stringify({ verdict: 'MATCH' }), createdAt: 1 }).run()
+    db.insert(pins).values({ orgId: 'org1', wallet: a, label: 'Acme Ltd', approvedAt: 1, active: 1 }).run()
+    db.insert(payees).values({ wallet: a, legalName: 'Acme Ltd', domain: 'acme.com', lei: '', masterId: '0x00000000', level: 1, activeFrom: 1, supersededAt: 5, successor: b, evidenceHash: '0x00', updatedBlock: 1 }).run()
+    deps.ops.readAllowlist = vi.fn(async () => [root, a] as any)
+    expect((await prepareApproval(deps as any, 'org1', 'ap2')).recipients).toEqual([root, b])
+    const p3 = await prepareApproval(deps as any, 'org1', 'ap3')
+    expect(p3.recipients).toEqual([root, b, c])
+    expect(p3.carried).toEqual([b])
+  })
 })
 
 function withPayment(deps: any, db: any) {
@@ -94,21 +145,26 @@ function withPayment(deps: any, db: any) {
 const TX = ('0x' + 'ab'.repeat(32)) as `0x${string}`
 
 describe('confirm', () => {
-  test('marks every prepared approval now on the allowlist approved + pinned, then pays the linked invoice', async () => {
-    const { deps, db } = seed()
+  test('cancelled popup: only the confirmed approval is approved + pinned; the carried wallet stays unpinned and still ASKs', async () => {
+    const { deps, db } = seed({ ap1: 'NO_MATCH' })
     withPayment(deps, db)
-    await prepareApproval(deps as any, 'org1', 'ap1')
-    await prepareApproval(deps as any, 'org1', 'ap2')
-    deps.ops.readAllowlist = vi.fn(async () => [root, a, b] as any)
+    db.insert(invoices).values({ id: 'i-ap1', orgId: 'org1', raw: 'x', payeeName: 'Stranger Co', address: a, amountBase: '1000000', currency: 'USDC', invoiceNo: 'S-1', status: 'awaiting_approval', createdAt: 1 }).run()
+    await prepareApproval(deps as any, 'org1', 'ap1') // the human closes this popup without signing
+    const p2 = await prepareApproval(deps as any, 'org1', 'ap2')
+    expect(p2.carried).toEqual([a])
+    deps.ops.readAllowlist = vi.fn(async () => [root, a, b] as any) // ap2's tx (carrying a) lands
     const r = await confirmApproval(deps as any, 'org1', 'ap2', TX)
     expect(r).toMatchObject({ approved: true, payment: { status: 'paid', txHash: '0xfeed' } })
     expect(deps.ops.waitReceipt).toHaveBeenCalledWith(TX)
-    const rows = db.select().from(approvals).all()
-    expect(rows.map((x) => x.status)).toEqual(['approved', 'approved'])
-    const pinned = db.select().from(pins).where(eq(pins.orgId, 'org1')).all()
-    expect(new Set(pinned.filter((p) => p.active === 1).map((p) => p.wallet))).toEqual(new Set([a, b]))
-    expect(db.select().from(events).where(eq(events.kind, 'approved')).all()).toHaveLength(2)
+    const status = Object.fromEntries(db.select().from(approvals).all().map((x) => [x.id, x.status]))
+    expect(status).toEqual({ ap1: 'prepared', ap2: 'approved' })
+    expect(db.select().from(pins).all().map((p) => p.wallet)).toEqual([b])
+    expect(db.select().from(events).where(eq(events.kind, 'approved')).all()).toHaveLength(1)
     expect(db.select().from(invoices).where(eq(invoices.id, 'i-ap2')).get()?.status).toBe('paid')
+    // a is allowlisted but not pinned: a NO_MATCH payee there still needs a human
+    const p = await payInvoice(deps as any, 'i-ap1')
+    expect(p).toMatchObject({ status: 'asked', approvalId: 'ap1' })
+    expect(deps.ops.send).toHaveBeenCalledOnce()
   })
   test('409 when the wallet is not on the live allowlist', async () => {
     const { deps, db } = seed()

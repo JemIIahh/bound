@@ -3,10 +3,10 @@ import {
   type Address, type Hex,
 } from 'viem'
 import { Abis, Account } from 'viem/tempo'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, ne, notInArray } from 'drizzle-orm'
 import {
-  agentAccount, getNetwork, KEYCHAIN, memoFromInvoice, payWithKey, PaymentOutcomeUnknown, PaymentRejected, preflightPay,
-  readAllowlist, readKey, readPayee, resolveRecipient, type OnchainPayee,
+  agentAccount, getNetwork, isVirtualAddress, KEYCHAIN, memoFromInvoice, payWithKey, PaymentOutcomeUnknown, PaymentRejected,
+  preflightPay, readAllowlist, readKey, readPayee, resolveRecipient, type OnchainPayee,
 } from '@bound/core'
 import type { AppDeps } from '../app'
 import { decryptSecret, newId } from '../crypto'
@@ -14,6 +14,7 @@ import type { Db } from '../db/client'
 import { approvals, invoices, orgs, payments } from '../db/schema'
 import { requestApproval } from './approvals'
 import { logEvent, nowSeconds } from './events'
+import { withOrgLock } from './mutex'
 import { verifyPayee, type VerifyOutput } from './verify-service'
 
 /** Every chain interaction the services need, injected so tests run offline. */
@@ -96,7 +97,28 @@ async function reconcile(deps: ServiceDeps, row: PaymentRow, lab: boolean): Prom
   }
 }
 
-const isUniqueViolation = (e: unknown) => /SQLITE_CONSTRAINT/.test(String((e as any)?.code ?? '')) || /UNIQUE constraint failed/.test(String((e as any)?.message ?? ''))
+/** Only a UNIQUE (or primary-key, which SQLite also reports as UNIQUE) violation means "another attempt holds the slot". */
+export const isUniqueViolation = (e: unknown) => String((e as { message?: unknown } | null)?.message ?? '').includes('UNIQUE')
+
+const same = (x: string, y: string) => x.toLowerCase() === y.toLowerCase()
+
+/**
+ * Another invoice of this org already paying (or paid, or possibly paid) the same effective payee with
+ * the same memo is a duplicate invoice. Only definitely-not-moved payments (rejected/reverted) are ignored.
+ */
+async function findDuplicate(deps: ServiceDeps, p: { orgId: string; invoiceId: string; memo: Hex; to: Address; effective: Address }): Promise<string | null> {
+  const rows = deps.db.select().from(payments).where(and(
+    eq(payments.orgId, p.orgId), eq(payments.memo, p.memo), ne(payments.invoiceId, p.invoiceId),
+    notInArray(payments.status, ['rejected', 'reverted']),
+  )).all()
+  for (const r of rows) {
+    const eff = same(r.toAddress, p.to) ? p.effective
+      : isVirtualAddress(r.toAddress) ? getAddress((await deps.ops.resolveRecipient(getAddress(r.toAddress))).effective)
+      : getAddress(r.toAddress)
+    if (eff === p.effective) return r.invoiceId
+  }
+  return null
+}
 
 /** Atomically claims the invoice's single payment slot. Returns the payment id, or null if another attempt holds it. */
 function claimPayment(db: Db, p: { existing: PaymentRow | undefined; orgId: string; invoiceId: string; to: Address; amount: bigint; memo: Hex }): string | null {
@@ -175,56 +197,95 @@ export async function payInvoice(deps: ServiceDeps, invoiceId: string, opts: { l
     return { status: 'asked', reason: 'needs_approval', approvalId: ap.id }
   }
 
-  // PAY
-  const to = v.address
+  // PAY: duplicate check → preflight → claim → send run under the org lock, so two invoices of one org
+  // never race the agent key's nonce, the spending limit, or each other's duplicate check.
+  // (withOrgLock is not re-entrant: payInvoice must never be called from inside withOrgLock.)
   const memo = memoFromInvoice(inv.invoiceNo?.trim() || inv.id)
+  return withOrgLock(org.id, () => payLocked(deps, { orgId: org.id, invoiceId, to: v.address, effective: v.effectiveAddress, amount, memo, lab, detail }))
+}
+
+async function payLocked(
+  deps: ServiceDeps,
+  p: { orgId: string; invoiceId: string; to: Address; effective: Address; amount: bigint; memo: Hex; lab: boolean; detail: Record<string, unknown> },
+): Promise<PayResult> {
+  const { db } = deps
+  const { orgId, invoiceId, to, amount, memo, lab, detail } = p
+
+  // Re-read under the lock: another attempt for this invoice may have finished while we verified.
+  const current = db.select().from(payments).where(eq(payments.invoiceId, invoiceId)).get()
+  if (current?.status === 'confirmed') return { status: 'paid', txHash: current.txHash as Hex }
+  if (current && current.status !== 'rejected' && current.status !== 'reverted') return { status: 'failed', reason: 'in_flight' }
+
+  let duplicateOf: string | null
+  try {
+    duplicateOf = await findDuplicate(deps, { orgId, invoiceId, memo, to, effective: p.effective })
+  } catch (e) {
+    console.error('[payments] duplicate check failed; not paying', invoiceId, e)
+    return { status: 'failed', reason: 'duplicate_check_failed' }
+  }
+  if (duplicateOf) {
+    setInvoice(db, invoiceId, { status: 'blocked' })
+    logEvent(db, { orgId, kind: 'blocked', invoiceId, detail: { ...detail, reason: 'duplicate_invoice', duplicateOf } })
+    return { status: 'blocked', reason: 'duplicate_invoice' }
+  }
+
   let pre: Awaited<ReturnType<ChainOps['preflight']>>
   try {
-    pre = await deps.ops.preflight({ orgId: org.id, to, amount, memo })
+    pre = await deps.ops.preflight({ orgId, to, amount, memo })
   } catch (e) {
-    pre = { ok: false, code: 'Other', message: (e as Error)?.message ?? String(e) }
+    console.error('[payments] preflight errored', invoiceId, e)
+    pre = { ok: false, code: 'Other', message: '' }
   }
   if (!pre.ok) {
     if (pre.code === 'SpendingLimitExceeded') {
       // An allowlist approval cannot fix a spending limit, so no approval row is created: a human
       // must raise the limit or wait for the period to roll over.
-      setInvoice(db, invoiceId, { action: 'ASK', status: 'awaiting_approval' })
-      logEvent(db, { orgId: org.id, kind: 'asked', invoiceId, detail: { ...detail, reason: 'over_limit' } })
+      setInvoice(db, invoiceId, { action: 'ASK', status: 'over_limit' })
+      logEvent(db, { orgId, kind: 'over_limit', invoiceId, detail: { ...detail, reason: 'over_limit' } })
       return { status: 'asked', reason: 'over_limit' }
     }
     setInvoice(db, invoiceId, { status: 'failed' })
-    logEvent(db, { orgId: org.id, kind: 'preflight_failed', invoiceId, detail: { ...detail, code: pre.code, message: pre.message } })
+    logEvent(db, { orgId, kind: 'preflight_failed', invoiceId, detail: { ...detail, code: pre.code } })
     return { status: 'failed', reason: 'preflight_failed' }
   }
 
-  const paymentId = claimPayment(db, { existing, orgId: org.id, invoiceId, to, amount, memo })
+  const paymentId = claimPayment(db, { existing: current, orgId, invoiceId, to, amount, memo })
   if (!paymentId) return { status: 'failed', reason: 'in_flight' }
-  const row = { id: paymentId, orgId: org.id, invoiceId, toAddress: to, amountBase: amount.toString() }
+  const row = { id: paymentId, orgId, invoiceId, toAddress: to, amountBase: amount.toString() }
+  const markUnknown = (txHash: Hex | null) => {
+    db.update(payments).set({ status: 'unknown', txHash }).where(eq(payments.id, paymentId)).run()
+    setInvoice(db, invoiceId, { status: 'processing' })
+    return { status: 'failed' as const, reason: 'rpc_error', ...(txHash ? { txHash } : {}) }
+  }
 
   let sent: Awaited<ReturnType<ChainOps['send']>>
   try {
-    sent = await deps.ops.send({ orgId: org.id, to, amount, memo })
+    sent = await deps.ops.send({ orgId, to, amount, memo })
   } catch (e) {
     if (e instanceof PaymentNotSent) {
+      console.error('[payments] not sent', paymentId, e.code, e)
       db.update(payments).set({ status: 'rejected' }).where(eq(payments.id, paymentId)).run()
       setInvoice(db, invoiceId, { status: 'failed' })
-      logEvent(db, { orgId: org.id, kind: 'chain_rejected', invoiceId, detail: { ...detail, code: e.code, message: e.message, broadcast: false } })
+      logEvent(db, { orgId, kind: 'chain_rejected', invoiceId, detail: { ...detail, code: e.code, broadcast: false } })
       return { status: 'failed', reason: 'not_sent' }
     }
     // Possibly broadcast: record what we know and reconcile later. Never resend blindly.
-    const maybe = (e as { txHash?: unknown })?.txHash
-    const txHash = typeof maybe === 'string' && isHex(maybe) ? maybe : null
-    db.update(payments).set({ status: 'unknown', txHash }).where(eq(payments.id, paymentId)).run()
-    setInvoice(db, invoiceId, { status: 'processing' })
-    console.error('[payments] outcome unknown', paymentId, txHash, e)
-    return { status: 'failed', reason: 'rpc_error', ...(txHash ? { txHash } : {}) }
+    console.error('[payments] outcome unknown', paymentId, e)
+    const maybe = (e as { txHash?: unknown } | null)?.txHash
+    return markUnknown(typeof maybe === 'string' && isHex(maybe) ? maybe : null)
   }
-  if (sent.status !== 'success') {
+  // Explicit mapping: only 'success' is paid and only 'reverted' is a revert; anything else is unknown.
+  if (sent?.status === 'success') {
+    markPaid(db, row, sent.txHash, lab)
+    return { status: 'paid', txHash: sent.txHash }
+  }
+  if (sent?.status === 'reverted') {
     markReverted(db, row, sent.txHash, lab)
     return { status: 'failed', reason: 'reverted', txHash: sent.txHash }
   }
-  markPaid(db, row, sent.txHash, lab)
-  return { status: 'paid', txHash: sent.txHash }
+  console.error('[payments] unrecognised send result; treating as unknown', paymentId, sent)
+  const hash = sent?.txHash
+  return markUnknown(typeof hash === 'string' && isHex(hash) ? hash : null)
 }
 
 // Error classes are matched by name as well as instanceof: core builds its viem clients from its own
@@ -237,20 +298,21 @@ const errorNamed = (e: unknown, name: string) => {
 
 export const isReceiptNotFound = (e: unknown) => e instanceof TransactionReceiptNotFoundError || errorNamed(e, 'TransactionReceiptNotFoundError')
 
+/** core's own pre-broadcast guard in payWithKey (assertTempoClient). */
+const PRE_BROADCAST_GUARD = /^Refusing to run: client is not a Tempo client/
+
 /**
- * Maps a payWithKey failure for payInvoice. Anything that carries a tx hash may have been broadcast and
- * is rethrown unchanged (payInvoice records it as 'unknown'); everything else happened before broadcast.
+ * Maps a payWithKey failure for payInvoice. Only an explicit pre-broadcast rejection (PaymentRejected,
+ * by instanceof or name, or core's own client guard) means "not sent". Everything else, including
+ * PaymentOutcomeUnknown (which carries the tx hash) and any unrecognised error, MAY have been
+ * broadcast and is passed through unchanged, so payInvoice records it as 'unknown' and never resends.
  */
 export function mapSendError(e: unknown): Error {
-  const txHash = (e as { txHash?: unknown } | null)?.txHash
-  if (e instanceof PaymentOutcomeUnknown || (e as Error | null)?.name === 'PaymentOutcomeUnknown' || (typeof txHash === 'string' && isHex(txHash))) {
-    return e instanceof Error ? e : Object.assign(new Error(String(e)), { txHash })
-  }
   if (e instanceof PaymentRejected || (e as Error | null)?.name === 'PaymentRejected') {
     return new PaymentNotSent(String((e as PaymentRejected).code ?? 'Other'), (e as Error).message)
   }
-  // payWithKey only throws other errors (client/chain assertions) before broadcasting; so does our key loading
-  return new PaymentNotSent('Other', (e as Error | null)?.message ?? String(e))
+  if (e instanceof Error && PRE_BROADCAST_GUARD.test(e.message)) return new PaymentNotSent('Other', e.message)
+  return e instanceof Error ? e : new Error(String(e))
 }
 
 /** Gas used for lab "guard off" sends so estimation (which would refuse) is skipped. */
@@ -272,6 +334,16 @@ export function productionChainOps(deps: AppDeps): ChainOps {
     const o = loadOrg(orgId)
     return agentAccount(decryptSecret(o.agentKeyEnc, config.serverSecret) as Hex, getAddress(o.rootAddress))
   }
+  /** Explicit receipt mapping: 'success' / 'reverted' only; anything else (incl. not found) is null = unknown. */
+  const receiptStatus = async (hash: Hex): Promise<'success' | 'reverted' | null> => {
+    try {
+      const r = await pub.getTransactionReceipt({ hash })
+      return r?.status === 'success' ? 'success' : r?.status === 'reverted' ? 'reverted' : null
+    } catch (e) {
+      if (isReceiptNotFound(e)) return null
+      throw e
+    }
+  }
 
   return {
     resolveRecipient: (to) => resolveRecipient(pub, to),
@@ -284,28 +356,34 @@ export function productionChainOps(deps: AppDeps): ChainOps {
     },
 
     async send(p) {
+      let account: ReturnType<typeof accountFor>
       try {
-        const r = await payWithKey({ network: chain.network, account: accountFor(p.orgId), token, to: p.to, amount: p.amount, memo: p.memo, ...(p.force ? { gas: FORCE_GAS } : {}) })
-        return { txHash: r.txHash, status: r.status }
+        account = accountFor(p.orgId) // our own pre-broadcast step
+      } catch (e) {
+        console.error('[payments] agent key unavailable', p.orgId, e)
+        throw new PaymentNotSent('Other', 'agent key unavailable')
+      }
+      let r: Awaited<ReturnType<typeof payWithKey>>
+      try {
+        r = await payWithKey({ network: chain.network, account, token, to: p.to, amount: p.amount, memo: p.memo, ...(p.force ? { gas: FORCE_GAS } : {}) })
       } catch (e) {
         throw mapSendError(e)
       }
+      if (r.status === 'success') return { txHash: r.txHash, status: 'success' }
+      // core reports every non-success receipt as 'reverted'; only call it a revert when the receipt says so
+      let st: 'success' | 'reverted' | null = null
+      try { st = await receiptStatus(r.txHash) } catch { st = null }
+      if (st) return { txHash: r.txHash, status: st }
+      throw new PaymentOutcomeUnknown(r.txHash, new Error('receipt status could not be confirmed'))
     },
 
     async waitReceipt(hash) {
       const r = await pub.waitForTransactionReceipt({ hash, timeout: 90_000 })
+      // consumers only proceed on 'success'; anything else fails closed
       return { status: r.status === 'success' ? 'success' : 'reverted' }
     },
 
-    async getReceipt(hash) {
-      try {
-        const r = await pub.getTransactionReceipt({ hash })
-        return r.status === 'success' ? 'success' : 'reverted'
-      } catch (e) {
-        if (isReceiptNotFound(e)) return null
-        throw e
-      }
-    },
+    getReceipt: receiptStatus,
 
     async findPaymentByMemo(orgId, memo, match) {
       const org = loadOrg(orgId)

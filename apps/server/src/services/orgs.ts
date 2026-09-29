@@ -5,13 +5,23 @@ import { buildAuthorizeKeyCall, MAX_RECIPIENTS, parseAmount } from '@bound/core'
 import { HttpError } from '../app'
 import { encryptSecret, newId, newToken, sha256 } from '../crypto'
 import { approvals, events, invoices, orgs, payments, pins } from '../db/schema'
+import { approvalStatus } from './approvals'
 import { nowSeconds } from './events'
 import type { ServiceDeps } from './payments'
 import { isUnrestrictedKey } from './verify-service'
 
 const KEY_LIFETIME_SECONDS = 180 * 86400
+/** The server-side demo signer may only authorize keys with a limit of at most 50 USD (6 decimals). */
+const DEMO_MAX_LIMIT_BASE = 50_000_000n
 
 type OrgRow = typeof orgs.$inferSelect
+
+/** The address of DEMO_ROOT_PRIVATE_KEY, or null when unset or malformed. */
+function demoRootAddress(deps: ServiceDeps): Address | null {
+  const key = deps.config.demoRootKey
+  if (!key) return null
+  try { return privateKeyToAddress(key) } catch { return null }
+}
 
 function loadOrg(deps: ServiceDeps, orgId: string): OrgRow {
   const org = deps.db.select().from(orgs).where(eq(orgs.id, orgId)).get()
@@ -36,6 +46,7 @@ export async function createOrg(deps: ServiceDeps, input: { name: string; rootAd
   let limit: bigint
   try { limit = parseAmount(input.limitUsd) } catch (e) { throw new HttpError(400, (e as Error).message) }
   if (limit <= 0n) throw new HttpError(400, 'limitUsd must be greater than zero')
+  if (demoRootAddress(deps) === rootAddress && limit > DEMO_MAX_LIMIT_BASE) throw new HttpError(400, 'Demo orgs are limited to 50 USD per period')
 
   const pk = generatePrivateKey()
   const agentKeyAddress = privateKeyToAddress(pk)
@@ -74,13 +85,14 @@ export async function confirmAuthorization(deps: ServiceDeps, orgId: string, txH
   return { authorized: true as const }
 }
 
-/** Demo only: when DEMO_ROOT_PRIVATE_KEY controls this org's root, sign the authorization server-side. */
+/** Demo only: when DEMO_ROOT_PRIVATE_KEY controls this org's root (and its limit is ≤ 50 USD), sign the authorization server-side. */
 export async function authorizeDemo(deps: ServiceDeps, orgId: string) {
   const org = loadOrg(deps, orgId)
-  const demoKey = deps.config.demoRootKey
-  if (!demoKey) throw new HttpError(404, 'Demo authorization is not enabled')
+  const demoRoot = demoRootAddress(deps)
+  if (!demoRoot) throw new HttpError(404, 'Demo authorization is not enabled')
   const root = getAddress(org.rootAddress)
-  if (privateKeyToAddress(demoKey) !== root) throw new HttpError(403, 'This org\'s root is not the demo account')
+  if (demoRoot !== root) throw new HttpError(403, 'This org\'s root is not the demo account')
+  if (BigInt(org.limitBase) > DEMO_MAX_LIMIT_BASE) throw new HttpError(403, 'Demo orgs are limited to 50 USD per period')
   if (org.authorized) return { authorized: true as const }
   const call = authorizeCallFor(deps, { agentKeyAddress: getAddress(org.agentKeyAddress), rootAddress: root, limit: BigInt(org.limitBase), periodSeconds: org.periodSeconds })
   const txHash = await deps.ops.sendDemoRoot(call)
@@ -130,7 +142,7 @@ export async function getOverview(deps: ServiceDeps, orgId: string) {
     capacity: { used: allowlist.length, max: MAX_RECIPIENTS },
     remaining,
     pins: db.select().from(pins).where(eq(pins.orgId, orgId)).all(),
-    approvals: approvalRows.map(({ verdictJson, ...a }) => ({ ...a, verdict: parseJson(verdictJson) })),
+    approvals: approvalRows.map(({ verdictJson, ...a }) => ({ ...a, status: approvalStatus(a), verdict: parseJson(verdictJson) })),
     invoices: invoiceRows.map(({ verdictJson, ...i }) => ({ ...i, verdict: parseJson(verdictJson) })),
     payments: db.select().from(payments).where(eq(payments.orgId, orgId)).orderBy(desc(payments.createdAt)).limit(100).all(),
     events: eventRows.map(({ detailJson, ...e }) => ({ ...e, detail: parseJson(detailJson) })),
