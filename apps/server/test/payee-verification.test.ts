@@ -517,6 +517,61 @@ describe('registry name-squatting guard on /attest', () => {
   })
 })
 
+describe('LEI reuse guard on /check-lei and /attest', () => {
+  const LEI = '5493001KJTIIGC8Y1R12'
+  const holder = '0xCcB7f43C7D6DBbC4e545d8C01761098da5332ED2'
+  const claimant = '0x' + '77'.repeat(20)
+  const registryRow = (over: Partial<typeof payees.$inferInsert> = {}) =>
+    ({ wallet: holder, legalName: 'Acme Ltd', domain: 'acme.com', lei: LEI, masterId: '0x00000000', level: 2, activeFrom: 1, evidenceHash: '0x00', updatedBlock: 1, ...over })
+  /** A signed + DNS-proven verification of another company that carries the holder's LEI. */
+  function ready(over: Partial<typeof payeeVerifications.$inferInsert> = {}) {
+    const { app, db, services } = setup({ lookupLei: vi.fn(async () => ({ legalName: 'ACME LIMITED', status: 'ISSUED' })) })
+    db.insert(payeeVerifications).values({ id: 'pv_l', wallet: claimant, legalName: 'Acme Ltd', domain: 'acme-ltd.co', lei: LEI, nonce: 'nonce1', sigVerified: 1, dnsVerified: 1, createdAt: 1, ...over }).run()
+    services.resolveTxt.mockResolvedValue(['bound-verify=nonce1'])
+    return {
+      app, db, services,
+      checkLei: () => request(app).post('/v1/payee-verifications/pv_l/check-lei'),
+      attest: () => request(app).post('/v1/payee-verifications/pv_l/attest'),
+    }
+  }
+
+  test('check-lei refuses an LEI already verified for another active payee (other wallet, other domain)', async () => {
+    const { db, services, checkLei } = ready()
+    db.insert(payees).values(registryRow()).run()
+    const r = await checkLei()
+    expect(r.status).toBe(409)
+    expect(r.body.error).toBe('This LEI is already verified for another company')
+    expect(services.lookupLei).not.toHaveBeenCalled()
+    expect(rowOf(db, 'pv_l').leiVerified).toBe(0)
+  })
+  test('attest refuses a verified LEI that another active payee took in the meantime; nothing is written', async () => {
+    const { db, services, attest } = ready({ leiVerified: 1 })
+    db.insert(payees).values(registryRow()).run()
+    const r = await attest()
+    expect(r.status).toBe(409)
+    expect(r.body.error).toBe('This LEI is already verified for another company')
+    expect(services.writeAttestation).not.toHaveBeenCalled()
+  })
+  test('superseded or revoked holders, the same wallet (re-attest) and the same domain (rotation) do not block', async () => {
+    for (const over of [{ supersededAt: 5 }, { revokedAt: 5 }, { wallet: claimant }, { domain: 'acme-ltd.co' }]) {
+      const a = ready()
+      a.db.insert(payees).values(registryRow(over)).run()
+      const l = await a.checkLei()
+      expect(l.status).toBe(200)
+      expect(l.body.leiVerified).toBe(true)
+      const b = ready({ leiVerified: 1 })
+      b.db.insert(payees).values(registryRow(over)).run()
+      expect((await b.attest()).status).toBe(200)
+      expect(b.services.writeAttestation).toHaveBeenCalledOnce()
+    }
+  })
+  test('another payee with a different LEI does not block', async () => {
+    const { db, checkLei } = ready()
+    db.insert(payees).values(registryRow({ lei: '529900T8BM49AURSDO55' })).run()
+    expect((await checkLei()).status).toBe(200)
+  })
+})
+
 describe('rate limits on the proof checks', () => {
   test.each(['check-dns', 'check-lei'])('/%s allows 30 per minute per IP, then 429', async (path) => {
     const { app, db, services } = setup({ lookupLei: vi.fn(async () => null as any) })

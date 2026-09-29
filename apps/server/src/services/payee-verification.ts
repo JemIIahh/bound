@@ -40,6 +40,22 @@ export function registeredNameHolder(db: Db, row: Pick<PayeeVerificationRow, 'le
   }) ?? null
 }
 
+/**
+ * LEI reuse: a current registry payee (not superseded or revoked) of ANOTHER company (other wallet and
+ * other domain) already holds this LEI. The same wallet (re-attest) or the same domain (wallet rotation)
+ * may reuse it. Reads the local registry mirror.
+ */
+export function registeredLeiHolder(db: Db, row: Pick<PayeeVerificationRow, 'lei' | 'wallet' | 'domain'>) {
+  const lei = row.lei.trim().toUpperCase()
+  if (!lei) return null
+  const wallet = getAddress(row.wallet)
+  const domain = normalizeDomain(row.domain)
+  const current = db.select().from(payees).where(and(eq(payees.supersededAt, 0), eq(payees.revokedAt, 0))).all()
+  return current.find((p) =>
+    p.lei.trim().toUpperCase() === lei && getAddress(p.wallet) !== wallet && normalizeDomain(p.domain) !== domain,
+  ) ?? null
+}
+
 export function productionPayeeServices(deps: AppDeps): PayeeServices {
   const { chain, config } = deps
   const pub = chain.pub
