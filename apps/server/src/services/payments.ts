@@ -107,6 +107,7 @@ const same = (x: string, y: string) => x.toLowerCase() === y.toLowerCase()
 /**
  * Another invoice of this org already paying (or paid, or possibly paid) the same effective payee with
  * the same memo is a duplicate invoice. Only definitely-not-moved payments (rejected/reverted) are ignored.
+ * Attack-lab payments count too: a guarded lab run pays real, approved payees through payInvoice.
  */
 async function findDuplicate(deps: ServiceDeps, p: { orgId: string; invoiceId: string; memo: Hex; to: Address; effective: Address }): Promise<string | null> {
   const rows = deps.db.select().from(payments).where(and(
@@ -367,7 +368,8 @@ export function productionChainOps(deps: AppDeps): ChainOps {
       try {
         const args = { network: chain.network, account, token, to: p.to, amount: p.amount, memo: p.memo }
         // force (attack lab "guard off" only): no simulation at all, so a keychain violation is mined and reverts onchain
-        r = p.force ? await forceSendWithKey(args) : await payWithKey(args)
+        // mainnet only when the operator explicitly enabled the lab there (the core refuses 4217 otherwise)
+        r = p.force ? await forceSendWithKey(args, { allowMainnet: chain.network === 'mainnet' && config.labEnabled === true }) : await payWithKey(args)
       } catch (e) {
         throw mapSendError(e)
       }

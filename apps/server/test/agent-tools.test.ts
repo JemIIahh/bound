@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm'
 import { createDb, migrate } from '../src/db/client'
 import { events, invoices, orgs, payees, payments } from '../src/db/schema'
 import { buildTools, rawTransfer, recordInvoiceFields } from '../src/agent/tools'
+import { PaymentOutcomeUnknown } from '@bound/core'
 import { PaymentNotSent } from '../src/services/payments'
 import { withOrgLock } from '../src/services/mutex'
 
@@ -47,6 +48,17 @@ describe('recordInvoiceFields', () => {
 })
 
 describe('rawTransfer (lab guard-off)', () => {
+  const HASH = ('0x' + 'ab'.repeat(32)) as `0x${string}`
+  const refused = (code = 'CallNotAllowed') => vi.fn(async () => ({ ok: false as const, code, message: `Account keychain error: ${code}` }))
+  const fast = { receiptTimeoutMs: 50, receiptPollMs: 5 }
+  function lab() {
+    const s = setup()
+    s.db.update(invoices).set({ lab: 1 }).where(eq(invoices.id, 'inv1')).run()
+    return s
+  }
+  const payment = (db: ReturnType<typeof setup>['db']) => db.select().from(payments).where(eq(payments.invoiceId, 'inv1')).get()
+  const eventsOf = (db: ReturnType<typeof setup>['db']) => db.select().from(events).where(eq(events.invoiceId, 'inv1')).all()
+
   test('refuses outside lab invoices', async () => {
     const { db } = setup()
     const ops = { preflight: vi.fn(), send: vi.fn() }
@@ -83,38 +95,135 @@ describe('rawTransfer (lab guard-off)', () => {
     expect(ops.send).toHaveBeenCalledOnce()
   })
   test('reports a transfer that was never broadcast without claiming a chain verdict', async () => {
-    const { db } = setup()
-    db.update(invoices).set({ lab: 1 }).where(eq(invoices.id, 'inv1')).run()
-    const ops = {
-      preflight: vi.fn(async () => { throw new Error('rpc down') }),
-      send: vi.fn(async () => { throw new PaymentNotSent('Other', 'nonce fetch failed') }),
-    }
+    const { db } = lab()
+    const ops = { preflight: refused(), send: vi.fn(async () => { throw new PaymentNotSent('Other', 'nonce fetch failed') }) }
     const r = await rawTransfer({ db, ops } as any, 'inv1', { to: attacker, amount: '10', memo: 'INV-EVIL' })
     expect(r).toMatchObject({ ok: false, chain: 'not_sent' })
     expect(invoice(db).status).toBe('failed')
-    expect(db.select().from(payments).where(eq(payments.invoiceId, 'inv1')).get()?.status).toBe('rejected')
+    expect(payment(db)?.status).toBe('rejected')
+  })
+  test('refuses when the org has not authorized its agent key', async () => {
+    const { db } = lab()
+    db.update(orgs).set({ authorized: 0 }).where(eq(orgs.id, 'org1')).run()
+    const ops = { preflight: refused(), send: vi.fn() }
+    const r = await rawTransfer({ db, ops } as any, 'inv1', { to: attacker, amount: '10', memo: 'INV-EVIL' })
+    expect(r).toMatchObject({ ok: false })
+    expect(ops.preflight).not.toHaveBeenCalled()
+    expect(ops.send).not.toHaveBeenCalled()
+    expect(payment(db)).toBeUndefined()
+  })
+  test('a spending-limit refusal is force-sent only when the amount exceeds the FULL per-period limit', async () => {
+    const { db } = lab() // org limitBase = 1 base unit, amount 10 USD: no refill can ever cover it
+    const ops = { preflight: refused('SpendingLimitExceeded'), send: vi.fn(async () => ({ txHash: '0xrej', status: 'reverted' })) }
+    const r = await rawTransfer({ db, ops } as any, 'inv1', { to: attacker, amount: '10', memo: 'INV-EVIL' })
+    expect(r).toMatchObject({ chain: 'rejected', code: 'SpendingLimitExceeded' })
+    expect(ops.send).toHaveBeenCalledOnce()
+  })
+  test('a spending-limit refusal within the per-period limit is never sent (a period refill could let it through)', async () => {
+    for (const limitBase of ['100000000', '10000000']) { // limit 100 USD, and limit == amount (10 USD)
+      const { db } = lab()
+      db.update(orgs).set({ limitBase }).where(eq(orgs.id, 'org1')).run()
+      const ops = { preflight: refused('SpendingLimitExceeded'), send: vi.fn() }
+      const r = await rawTransfer({ db, ops } as any, 'inv1', { to: acme, amount: '10', memo: 'INV-1' })
+      expect(r).toEqual({ ok: false, chain: 'not_sent', reason: 'lab only force-sends payments Tempo will refuse' })
+      expect(ops.send).not.toHaveBeenCalled()
+      expect(payment(db)?.status).toBe('rejected')
+      expect(invoice(db).status).toBe('blocked')
+    }
+  })
+  test('never sends when the preflight says Tempo would ACCEPT the payment', async () => {
+    const { db } = lab()
+    const ops = { preflight: vi.fn(async () => ({ ok: true as const })), send: vi.fn() }
+    const r = await rawTransfer({ db, ops } as any, 'inv1', { to: acme, amount: '10', memo: 'INV-1' })
+    expect(r).toEqual({ ok: false, chain: 'not_sent', reason: 'lab only force-sends payments Tempo will refuse' })
+    expect(ops.send).not.toHaveBeenCalled()
+    expect(invoice(db).status).toBe('blocked')
+    expect(payment(db)?.status).toBe('rejected')
+    expect(eventsOf(db).map((e) => e.kind)).toEqual(['blocked'])
+  })
+  test('never sends when the preflight failed to run', async () => {
+    const { db } = lab()
+    const ops = { preflight: vi.fn(async () => { throw new Error('rpc down') }), send: vi.fn() }
+    const r = await rawTransfer({ db, ops } as any, 'inv1', { to: attacker, amount: '10', memo: 'INV-EVIL' })
+    expect(r).toMatchObject({ ok: false, chain: 'not_sent' })
+    expect(ops.send).not.toHaveBeenCalled()
+    expect(invoice(db).status).toBe('blocked')
+  })
+  test('never sends on any other preflight code', async () => {
+    const { db } = lab()
+    const ops = { preflight: refused('Other'), send: vi.fn() }
+    expect(await rawTransfer({ db, ops } as any, 'inv1', { to: attacker, amount: '10', memo: 'INV-EVIL' })).toMatchObject({ chain: 'not_sent' })
+    expect(ops.send).not.toHaveBeenCalled()
   })
   test('the forced send waits for the org lock (no nonce race with a real payment)', async () => {
-    const { db } = setup()
-    db.update(invoices).set({ lab: 1 }).where(eq(invoices.id, 'inv1')).run()
-    const ops = { preflight: vi.fn(async () => ({ ok: true })), send: vi.fn(async () => ({ txHash: '0xok', status: 'success' })) }
+    const { db } = lab()
+    const ops = { preflight: refused(), send: vi.fn(async () => ({ txHash: '0xrej', status: 'reverted' })) }
     let release!: () => void
     const held = withOrgLock('org1', () => new Promise<void>((r) => { release = r }))
-    const pending = rawTransfer({ db, ops } as any, 'inv1', { to: acme, amount: '10', memo: 'INV-1' })
+    const pending = rawTransfer({ db, ops } as any, 'inv1', { to: attacker, amount: '10', memo: 'INV-EVIL' })
     await new Promise((r) => setTimeout(r, 20))
     expect(ops.send).not.toHaveBeenCalled()
     release(); await held
-    expect(await pending).toMatchObject({ ok: true })
+    expect(await pending).toMatchObject({ chain: 'rejected' })
     expect(ops.send).toHaveBeenCalledOnce()
   })
-  test('a transfer the chain accepts is recorded as paid', async () => {
-    const { db } = setup()
-    db.update(invoices).set({ lab: 1 }).where(eq(invoices.id, 'inv1')).run()
-    const ops = { preflight: vi.fn(async () => ({ ok: true })), send: vi.fn(async () => ({ txHash: '0xok', status: 'success' })) }
-    const r = await rawTransfer({ db, ops } as any, 'inv1', { to: acme, amount: '10', memo: 'INV-1' })
+  test('a refused-at-preflight payment the chain nonetheless accepts is recorded as paid (defensive)', async () => {
+    const { db } = lab()
+    const ops = { preflight: refused(), send: vi.fn(async () => ({ txHash: '0xok', status: 'success' })) }
+    const r = await rawTransfer({ db, ops } as any, 'inv1', { to: attacker, amount: '10', memo: 'INV-EVIL' })
     expect(r).toMatchObject({ ok: true, chain: 'accepted', txHash: '0xok' })
     expect(invoice(db).status).toBe('paid')
-    expect(db.select().from(payments).where(eq(payments.invoiceId, 'inv1')).get()).toMatchObject({ status: 'confirmed', txHash: '0xok' })
+    expect(payment(db)).toMatchObject({ status: 'confirmed', txHash: '0xok' })
+  })
+
+  describe('outcome unknown after broadcast: bounded receipt wait', () => {
+    const maybeSent = () => vi.fn(async () => { throw new PaymentOutcomeUnknown(HASH, new Error('502 Bad Gateway')) })
+    test('a receipt that shows the revert records the chain rejection', async () => {
+      const { db } = lab()
+      const ops = { preflight: refused(), send: maybeSent(), getReceipt: vi.fn().mockResolvedValueOnce(null).mockResolvedValue('reverted') }
+      const r = await rawTransfer({ db, ops } as any, 'inv1', { to: attacker, amount: '10', memo: 'INV-EVIL' }, fast)
+      expect(r).toMatchObject({ ok: false, chain: 'rejected', code: 'CallNotAllowed', txHash: HASH })
+      expect(payment(db)).toMatchObject({ status: 'reverted', txHash: HASH })
+      expect(invoice(db).status).toBe('blocked')
+      expect(eventsOf(db)).toEqual([expect.objectContaining({ kind: 'chain_rejected', txHash: HASH })])
+    })
+    test('a receipt that shows success records the payment', async () => {
+      const { db } = lab()
+      const ops = { preflight: refused(), send: maybeSent(), getReceipt: vi.fn(async () => 'success') }
+      const r = await rawTransfer({ db, ops } as any, 'inv1', { to: attacker, amount: '10', memo: 'INV-EVIL' }, fast)
+      expect(r).toMatchObject({ ok: true, chain: 'accepted', txHash: HASH })
+      expect(payment(db)?.status).toBe('confirmed')
+      expect(invoice(db).status).toBe('paid')
+    })
+    test('no receipt within the bound leaves it visibly unconfirmed, not processing', async () => {
+      const { db } = lab()
+      const ops = { preflight: refused(), send: maybeSent(), getReceipt: vi.fn().mockRejectedValueOnce(new Error('503')).mockResolvedValue(null) }
+      const r = await rawTransfer({ db, ops } as any, 'inv1', { to: attacker, amount: '10', memo: 'INV-EVIL' }, fast)
+      expect(r).toMatchObject({ ok: false, chain: 'unknown', txHash: HASH })
+      expect(payment(db)).toMatchObject({ status: 'unknown', txHash: HASH })
+      expect(invoice(db).status).toBe('unconfirmed')
+      expect(ops.getReceipt.mock.calls.length).toBeGreaterThan(1)
+    })
+    test('without a tx hash there is nothing to wait for: unconfirmed', async () => {
+      const { db } = lab()
+      const ops = { preflight: refused(), send: vi.fn(async () => { throw new Error('socket hang up') }), getReceipt: vi.fn() }
+      const r = await rawTransfer({ db, ops } as any, 'inv1', { to: attacker, amount: '10', memo: 'INV-EVIL' }, fast)
+      expect(r).toMatchObject({ ok: false, chain: 'unknown' })
+      expect(ops.getReceipt).not.toHaveBeenCalled()
+      expect(invoice(db).status).toBe('unconfirmed')
+    })
+    test('the wait happens outside the org lock', async () => {
+      const { db } = lab()
+      let resolveReceipt!: (v: 'reverted') => void
+      const ops = { preflight: refused(), send: maybeSent(), getReceipt: vi.fn(() => new Promise((r) => { resolveReceipt = r as any })) }
+      const pending = rawTransfer({ db, ops } as any, 'inv1', { to: attacker, amount: '10', memo: 'INV-EVIL' }, { receiptTimeoutMs: 5_000, receiptPollMs: 5 })
+      await vi.waitFor(() => expect(ops.getReceipt).toHaveBeenCalled())
+      await withOrgLock('org1', async () => {}) // would hang if the lock were still held
+      // crash-safe: before settling, the row already records the possibly-sent tx
+      expect(payment(db)).toMatchObject({ status: 'unknown', txHash: HASH })
+      resolveReceipt('reverted')
+      expect(await pending).toMatchObject({ chain: 'rejected' })
+    })
   })
 })
 
@@ -148,6 +257,20 @@ describe('buildTools', () => {
     expect(out.reasons.map((r: any) => r.code)).toContain('claims_verified_payee')
     expect(out.reasons.every((r: any) => typeof r.detail === 'string' && r.detail.length > 0)).toBe(true)
     expect(log).toHaveBeenCalledWith('verify_payee', expect.objectContaining({ verdict: 'LOOKALIKE', reasons: out.reasons }))
+  })
+
+  test('verify_payee persists the verdict only when it checked exactly the recorded invoice fields', async () => {
+    const d = deps()
+    await recordInvoiceFields(d as any, 'inv1', { payeeName: 'Acme Ltd', address: attacker, amount: '10', currency: 'USDC', invoiceNo: 'INV-1', senderDomain: 'Billing@Acme.com' })
+    const verify = buildTools(d as any, 'inv1', 'guarded').find((t) => t.name === 'verify_payee') as any
+    await verify.run({ address: attacker, payeeName: 'Acme Limited', senderDomain: 'acme.com' }) // other name
+    await verify.run({ address: attacker, payeeName: 'Acme Ltd', senderDomain: 'other.com' }) // other domain
+    await verify.run({ address: attacker, payeeName: 'Acme Ltd' }) // domain omitted
+    await verify.run({ address: acme, payeeName: 'Acme Ltd', senderDomain: 'acme.com' }) // other address
+    expect(invoice(d.db).verdictJson).toBeNull()
+    await verify.run({ address: attacker.toLowerCase(), payeeName: ' Acme Ltd ', senderDomain: 'billing@ACME.com' }) // same after normalization
+    expect(JSON.parse(invoice(d.db).verdictJson!).verdict).toBe('LOOKALIKE')
+    expect(invoice(d.db).action).toBe('BLOCK')
   })
 
   test('pay_invoice re-verifies server-side and blocks a lookalike even when the model asks to pay', async () => {

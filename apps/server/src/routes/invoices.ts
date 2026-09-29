@@ -1,4 +1,4 @@
-import { Router } from 'express'
+import { Router, type RequestHandler } from 'express'
 import { z } from 'zod'
 import { and, eq } from 'drizzle-orm'
 import { txUrl } from '@bound/core'
@@ -6,6 +6,7 @@ import { HttpError } from '../app'
 import { requireOrg } from '../auth'
 import { newId } from '../crypto'
 import { invoices, payments } from '../db/schema'
+import { perOrgLimit } from '../rate-limit'
 import { nowSeconds } from '../services/events'
 import type { ServiceDeps } from '../services/payments'
 import { isPdfBase64, runAgent } from '../agent/run'
@@ -43,14 +44,15 @@ const parseJson = (s: string | null) => {
   try { return JSON.parse(s) } catch { return null }
 }
 
-export function invoicesRouter(deps: ServiceDeps, run: AgentRunner = runAgent) {
+export function invoicesRouter(deps: ServiceDeps, run: AgentRunner = runAgent, limit: RequestHandler = perOrgLimit(10)) {
   const r = Router()
   const auth = requireOrg(deps)
 
-  r.post('/orgs/:orgId/invoices', auth, (req, res) => {
+  r.post('/orgs/:orgId/invoices', auth, limit, (req, res) => {
     const raw = invoiceRaw(req.body)
     const id = newId('inv')
-    deps.db.insert(invoices).values({ id, orgId: req.params.orgId, raw, lab: 0, createdAt: nowSeconds() }).run()
+    const orgId: string = res.locals.org.id // set by requireOrg
+    deps.db.insert(invoices).values({ id, orgId, raw, lab: 0, createdAt: nowSeconds() }).run()
     startAgent(deps, run, id, 'guarded')
     res.status(202).json({ invoiceId: id })
   })
@@ -62,7 +64,7 @@ export function invoicesRouter(deps: ServiceDeps, run: AgentRunner = runAgent) {
     const { verdictJson, agentLog, raw, ...rest } = inv
     res.json({
       ...rest,
-      raw: raw.startsWith('pdf:') && isPdfBase64(raw.slice(4)) ? '[pdf]' : raw,
+      raw: raw.startsWith('pdf:') ? '[pdf]' : raw, // never echo (or scan) a stored PDF's base64
       verdict: parseJson(verdictJson),
       agentLog: parseJson(agentLog) ?? [],
       payment: pay

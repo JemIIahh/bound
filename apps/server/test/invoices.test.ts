@@ -6,8 +6,9 @@ import { invoices, orgs } from '../src/db/schema'
 import { createApp, finalize } from '../src/app'
 import { sha256 } from '../src/crypto'
 import { invoicesRouter } from '../src/routes/invoices'
-import { labRouter } from '../src/routes/lab'
+import { labRouter, mountLab } from '../src/routes/lab'
 import { invoiceContent } from '../src/agent/run'
+import { loadConfig } from '../src/config'
 
 const root = '0x3333333333333333333333333333333333333333'
 const PDF = Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF').toString('base64')
@@ -88,6 +89,30 @@ describe('GET /v1/orgs/:orgId/invoices/:invoiceId', () => {
     const res = await request(app).get('/v1/orgs/org1/invoices/inv1').set(auth())
     expect(res.body.raw).toBe('[pdf]')
     expect(res.body.agentLog).toEqual([])
+  })
+})
+
+describe('lab availability', () => {
+  test('the lab router is mounted on testnet, and on mainnet only with LAB_ENABLED', async () => {
+    const cases = [['testnet', false, 202], ['mainnet', false, 404], ['mainnet', true, 202]] as const
+    for (const [network, labEnabled, expected] of cases) {
+      const db = createDb(':memory:'); migrate(db)
+      db.insert(orgs).values({ id: 'org1', name: 'o', rootAddress: root, agentKeyAddress: '0x' + '44'.repeat(20), agentKeyEnc: 'x', tokenHash: sha256('tok1'), limitBase: '1', periodSeconds: 1, authorized: 1, createdAt: 1 }).run()
+      const deps = { db, chain: { network } as any, config: { webOrigin: '*', network, labEnabled } as any, ops: {} as any } as any
+      const run = vi.fn(async () => {})
+      const app = createApp(deps)
+      expect(mountLab(app, deps, run)).toBe(expected === 202)
+      finalize(app)
+      const res = await request(app).post('/v1/lab/org1/run').set(auth()).send({ text: 'x', guardOff: true })
+      expect(res.status).toBe(expected)
+      expect(run).toHaveBeenCalledTimes(expected === 202 ? 1 : 0)
+    }
+  })
+  test('LAB_ENABLED defaults to false', () => {
+    const env = { BOUND_REGISTRY_ADDRESS: '0x00', ATTESTER_PRIVATE_KEY: '0x01', SERVER_SECRET: '0x' + '11'.repeat(32) }
+    expect(loadConfig(env).labEnabled).toBe(false)
+    expect(loadConfig({ ...env, LAB_ENABLED: 'true' }).labEnabled).toBe(true)
+    expect(loadConfig({ ...env, LAB_ENABLED: 'false' }).labEnabled).toBe(false)
   })
 })
 

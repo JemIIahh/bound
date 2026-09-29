@@ -64,5 +64,12 @@ check('attacker received nothing', (await balanceOf(attacker)) === 0n)
 check('invoice blocked', db.select().from(invoices).where(eq(invoices.id, 'inv1')).get()?.status === 'blocked')
 check('payment row reverted with the hash', db.select().from(payments).where(eq(payments.invoiceId, 'inv1')).get()?.txHash === out.txHash)
 check('chain_rejected event', db.select().from(events).where(eq(events.kind, 'chain_rejected')).all().length === 1)
+
+// the gate: a guard-off transfer Tempo WOULD accept (to the allowlisted payee) is never sent
+db.insert(invoices).values({ id: 'inv2', orgId: 'org1', raw: 'lab', lab: 1, createdAt: 2 }).run()
+const tools2 = buildTools(deps, 'inv2', 'guard_off', (name, o) => console.log(`tool_result ${name}`, JSON.stringify(o)))
+const gated = JSON.parse(await (tools2.find((t) => t.name === 'raw_transfer') as any).run({ to: payee, amount: '1.00', memo: 'INV-OK-7' }))
+check('gate: payable transfer is not sent', gated.chain === 'not_sent' && !gated.txHash, gated)
+check('gate: payee received nothing', (await balanceOf(payee)) === 0n)
 console.log(failed ? `FAILED checks: ${failed}` : 'ALL CHECKS PASSED')
 process.exit(failed ? 1 : 0)

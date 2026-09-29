@@ -8,7 +8,7 @@ import { productionChainOps, type ServiceDeps } from './services/payments'
 import { verifyRouter } from './routes/verify'
 import { orgsRouter } from './routes/orgs'
 import { invoicesRouter } from './routes/invoices'
-import { labRouter } from './routes/lab'
+import { mountLab } from './routes/lab'
 import { mountMcp } from './mcp'
 
 const config = loadConfig()
@@ -20,10 +20,10 @@ const base = { db, chain, config }
 const deps: ServiceDeps = { ...base, ops: productionChainOps(base) }
 const app = createApp(deps)
 // Routers mount here, before finalize(app).
-app.use('/v1', payeesRouter(deps))
+app.use('/v1', payeesRouter(base))
 app.use('/v1', verifyRouter(deps))
 app.use('/v1', orgsRouter(deps))
 app.use('/v1', invoicesRouter(deps))
-app.use('/v1', labRouter(deps))
+if (!mountLab(app, deps)) console.log('attack lab disabled (mainnet without LAB_ENABLED=true)')
 mountMcp(app, deps) // public, read-only: verify_payee + lookup_payee only
 finalize(app).listen(config.port, () => console.log(`bound server on :${config.port} (${config.network})`))

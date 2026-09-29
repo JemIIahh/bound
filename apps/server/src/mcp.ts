@@ -1,4 +1,5 @@
 import type express from 'express'
+import type { RequestHandler } from 'express'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { z } from 'zod'
@@ -7,6 +8,7 @@ import { or, sql } from 'drizzle-orm'
 import { payees } from './db/schema'
 import { verifyPayee } from './services/verify-service'
 import type { ServiceDeps } from './services/payments'
+import { perIpLimit } from './rate-limit'
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true } as const
 
@@ -62,8 +64,8 @@ function buildServer(deps: ServiceDeps) {
 }
 
 /** Stateless MCP over streamable HTTP: a fresh server + transport per request. */
-export function mountMcp(app: express.Express, deps: ServiceDeps) {
-  app.post('/mcp', async (req, res) => {
+export function mountMcp(app: express.Express, deps: ServiceDeps, limit: RequestHandler = perIpLimit(60)) {
+  app.post('/mcp', limit, async (req, res) => {
     const server = buildServer(deps)
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
     res.on('close', () => { void transport.close(); void server.close() })

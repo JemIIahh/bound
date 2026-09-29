@@ -6,7 +6,7 @@ import { Abis } from 'viem/tempo'
 import { eq } from 'drizzle-orm'
 import { AllowlistError, KEYCHAIN } from '@bound/core'
 import { createDb, migrate } from '../src/db/client'
-import { approvals, invoices, orgs } from '../src/db/schema'
+import { approvals, invoices, orgs, payments } from '../src/db/schema'
 import { createApp, finalize } from '../src/app'
 import { orgsRouter } from '../src/routes/orgs'
 import { decryptSecret, sha256 } from '../src/crypto'
@@ -104,6 +104,20 @@ describe('requireOrg + overview', () => {
     for (const k of ['pins', 'payments', 'events']) expect(Array.isArray(body[k])).toBe(true)
     expect(ops.readAllowlist).toHaveBeenCalled()
   })
+  test('attack-lab invoices and payments are left out of the counters', async () => {
+    const { app, db } = setup()
+    const { org, token: t } = (await create(app)).body
+    db.update(orgs).set({ authorized: 1 }).where(eq(orgs.id, org.id)).run()
+    db.insert(invoices).values({ id: 'real', orgId: org.id, raw: 'x', amountBase: '7000000', status: 'blocked', createdAt: 2 }).run()
+    db.insert(invoices).values({ id: 'labBlocked', orgId: org.id, raw: 'x', amountBase: '9000000', status: 'blocked', lab: 1, createdAt: 3 }).run()
+    db.insert(invoices).values({ id: 'labPaid', orgId: org.id, raw: 'x', amountBase: '1000000', status: 'paid', lab: 1, createdAt: 4 }).run()
+    db.insert(invoices).values({ id: 'realPaid', orgId: org.id, raw: 'x', amountBase: '2000000', status: 'paid', createdAt: 5 }).run()
+    db.insert(payments).values({ id: 'p1', orgId: org.id, invoiceId: 'labPaid', toAddress: root, amountBase: '1000000', memo: '0x01', txHash: '0x1', status: 'confirmed', createdAt: 4 }).run()
+    db.insert(payments).values({ id: 'p2', orgId: org.id, invoiceId: 'realPaid', toAddress: root, amountBase: '2000000', memo: '0x02', txHash: '0x2', status: 'confirmed', createdAt: 5 }).run()
+    const res = await request(app).get(`/v1/orgs/${org.id}/overview`).set('authorization', `Bearer ${t}`)
+    expect(res.body.counters).toEqual({ checks: 0, paid: 1, blocked: 1, protectedBase: '7000000' })
+  })
+
   test('overview reports an unrestricted key instead of an allowlist', async () => {
     const { app, db, ops } = setup()
     const { org, token: t } = (await create(app)).body
