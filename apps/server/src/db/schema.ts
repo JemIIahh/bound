@@ -87,6 +87,7 @@ export const approvals = sqliteTable('approvals', {
   status: text('status').notNull().default('pending'), // pending | prepared | approved | rejected
   txHash: text('tx_hash'),
   createdAt: integer('created_at').notNull(),
+  preparedAt: integer('prepared_at'),                   // when last prepared; 'prepared' expires after 15 min
 })
 
 export const payments = sqliteTable('payments', {
