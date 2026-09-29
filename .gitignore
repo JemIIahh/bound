@@ -16,3 +16,5 @@ contracts/broadcast
 # local agent worktrees
 .claude/
 .superpowers/
+*.db-shm
+*.db-wal
