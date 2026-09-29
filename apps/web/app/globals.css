@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+/* Design tokens: light, monochrome. Verdict colours are the only accents (see components/ui.ts). */
+@theme {
+  --font-sans: var(--font-schibsted), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-schibsted), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, monospace;
+
+  --color-paper: #ececea;
+  --color-ink: #0d0d0d;
+  --color-graphite: #666663;
+  --color-mist: #b9b9b4;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+.live-dot {
+  animation: blink 1.9s steps(1, end) infinite;
+}
+
+::selection {
+  background: var(--color-ink);
+  color: var(--color-paper);
+}
