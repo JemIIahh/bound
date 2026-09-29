@@ -50,4 +50,12 @@ describe('compareNames', () => {
   test('registered non-Latin names still match themselves', () => {
     expect(compareNames('Сбер', 'Сбер').result).toBe('MATCH')
   })
+  test('invisible characters are stripped and flagged as homoglyph', () => {
+    for (const ch of ['\u200b', '\u200d', '\u00ad']) {
+      const n = normalizeName(`Ac${ch}me Ltd`)
+      expect(n.normalized).toBe('acme')
+      expect(n.homoglyph).toBe(true)
+      expect(compareNames(`Ac${ch}me Ltd`, 'Acme Ltd').result).toBe('CLOSE_MATCH')
+    }
+  })
 })
