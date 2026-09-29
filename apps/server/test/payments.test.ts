@@ -273,6 +273,33 @@ describe('stuck submitting payments', () => {
   })
 })
 
+describe('currency guard', () => {
+  test.each(['EUR 300', 'USDT', 'EUR', ' gbp '])('an invoice in %j is failed with currency_unsupported; nothing is verified or sent', async (currency) => {
+    const { deps, ops, db } = setup()
+    db.update(invoices).set({ currency }).where(eq(invoices.id, 'inv1')).run()
+    expect(await payInvoice(deps as any, 'inv1')).toEqual({ status: 'failed', reason: 'currency_unsupported' })
+    expect(invoiceRow(db)?.status).toBe('failed')
+    expect(ops.resolveRecipient).not.toHaveBeenCalled()
+    expect(ops.preflight).not.toHaveBeenCalled()
+    expect(ops.send).not.toHaveBeenCalled()
+    const ev = db.select().from(events).where(eq(events.invoiceId, 'inv1')).all()
+    expect(ev.map((e) => e.kind)).toEqual(['currency_unsupported'])
+    expect(JSON.parse(ev[0]!.detailJson)).toMatchObject({ reason: 'currency_unsupported', currency: currency.trim() })
+  })
+  test('a missing currency fails closed', async () => {
+    const { deps, ops, db } = setup()
+    db.update(invoices).set({ currency: null }).where(eq(invoices.id, 'inv1')).run()
+    expect(await payInvoice(deps as any, 'inv1')).toEqual({ status: 'failed', reason: 'currency_unsupported' })
+    expect(ops.send).not.toHaveBeenCalled()
+  })
+  test.each(['USDC.e', 'usd', 'USDC', ' pathUSD ', 'USD'])('an invoice in %j pays', async (currency) => {
+    const { deps, ops, db } = setup()
+    db.update(invoices).set({ currency }).where(eq(invoices.id, 'inv1')).run()
+    expect((await payInvoice(deps as any, 'inv1')).status).toBe('paid')
+    expect(ops.send).toHaveBeenCalledOnce()
+  })
+})
+
 describe('production chain ops error mapping', () => {
   // core builds viem clients from its own viem instance: errors must be recognised by name, not only instanceof
   class TransactionReceiptNotFoundError extends Error { override name = 'TransactionReceiptNotFoundError' }

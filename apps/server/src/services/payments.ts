@@ -107,6 +107,10 @@ const SUBMITTING_STALE_SECONDS = 120
 const isStaleSubmitting = (row: Pick<PaymentRow, 'status' | 'createdAt'>) =>
   row.status === 'submitting' && nowSeconds() - row.createdAt > SUBMITTING_STALE_SECONDS
 
+/** Bound pays in USD stablecoins only; compared trimmed, upper-cased and without dots (USDC.e → USDCE). */
+const SUPPORTED_CURRENCIES = new Set(['USD', 'USDC', 'USDCE', 'PATHUSD'])
+export const isSupportedCurrency = (c: string | null | undefined) => !!c && SUPPORTED_CURRENCIES.has(c.trim().toUpperCase().replace(/\./g, ''))
+
 /** Only a UNIQUE (or primary-key, which SQLite also reports as UNIQUE) violation means "another attempt holds the slot". */
 export const isUniqueViolation = (e: unknown) => String((e as { message?: unknown } | null)?.message ?? '').includes('UNIQUE')
 
@@ -178,6 +182,12 @@ export async function payInvoice(deps: ServiceDeps, invoiceId: string, opts: { l
   let amount: bigint
   try { amount = BigInt(inv.amountBase) } catch { return { status: 'failed', reason: 'incomplete_invoice' } }
   if (amount <= 0n) return { status: 'failed', reason: 'incomplete_invoice' }
+  if (!isSupportedCurrency(inv.currency)) {
+    // the agent key moves USD stablecoins: an invoice in any other currency must never be paid 1:1
+    setInvoice(db, invoiceId, { status: 'failed' })
+    logEvent(db, { orgId: org.id, kind: 'currency_unsupported', invoiceId, detail: { to: inv.address, amount: amount.toString(), currency: inv.currency?.trim() ?? null, reason: 'currency_unsupported', ...(lab ? { lab: true } : {}) } })
+    return { status: 'failed', reason: 'currency_unsupported' }
+  }
   if (!org.authorized) return { status: 'failed', reason: 'org_not_authorized' }
 
   let v: VerifyOutput
