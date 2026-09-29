@@ -4,7 +4,7 @@ import { generatePrivateKey, privateKeyToAddress } from 'viem/accounts'
 import { Abis, Account } from 'viem/tempo'
 import {
   KEYCHAIN, TRANSFER_WITH_MEMO_SELECTOR, agentAccount, buildAuthorizeKeyCall, buildSetAllowlistCall, getNetwork,
-  memoFromInvoice, payWithKey, preflightPay, publicClientFor, readAllowlist, txUrl, withRecipient,
+  memoFromInvoice, payWithKey, PaymentOutcomeUnknown, preflightPay, publicClientFor, readAllowlist, txUrl, withRecipient,
 } from '../src/index'
 
 const NET = 'testnet' as const
@@ -46,7 +46,9 @@ async function rootSend(label: string, call: { to: Address; data: Hex }) {
     hashes.push([label, r.transactionHash])
     return r
   } catch (e) {
-    console.log(`(send ${label} errored: ${(e as any).shortMessage ?? (e as Error).message}; checking state instead)`)
+    const h = (e as any).receipt?.transactionHash ?? (e as any).cause?.receipt?.transactionHash
+    if (h) hashes.push([`${label} (FAILED/REVERTED)`, h])
+    console.log(`(send ${label} errored: ${(e as any).shortMessage ?? (e as Error).message}${h ? ` tx ${h}` : ''}; checking state instead)`)
     return null
   }
 }
@@ -84,9 +86,14 @@ let payRes: Awaited<ReturnType<typeof payWithKey>> | null = null
 try {
   payRes = await payWithKey({ network: NET, account: agent, token, to: payee, amount: 1_000_000n, memo })
   hashes.push(['payWithKey', payRes.txHash])
-} catch (e) { console.log('payWithKey errored', (e as any).shortMessage ?? (e as Error).message) }
+} catch (e) {
+  console.log('payWithKey errored', (e as any).name, (e as any).txHash ?? '', (e as any).shortMessage ?? (e as Error).message)
+  if (e instanceof PaymentOutcomeUnknown) hashes.push(['payWithKey (outcome unknown)', e.txHash])
+}
 const payeeBal = await retry(() => balanceOf(payee))
-check('5c payWithKey success', payRes?.status === 'success' || payeeBal === 1_000_000n, { payRes, payeeBal })
+check('5c payWithKey success', payRes?.status === 'success' && payeeBal === 1_000_000n, { payRes, payeeBal })
+console.log('precomputed txHash =', payRes?.txHash, '\nreceipt txHash     =', payRes?.receiptTxHash)
+check('5d precomputed hash == receipt hash', !!payRes && payRes.txHash === payRes.receiptTxHash)
 
 // 6. spending limit
 const pf3 = await preflightPay(pub, { account: agent, token, to: payee, amount: 10_000_000n, memo })
@@ -98,11 +105,19 @@ const emptyData = encodeFunctionData({
   functionName: 'setAllowedCalls',
   args: [keyId, [{ target: token, selectorRules: [{ selector: TRANSFER_WITH_MEMO_SELECTOR, recipients: [] }] }]] as any,
 })
-await rootSend('setAllowedCalls[] (probe)', { to: KEYCHAIN, data: emptyData })
-const list3 = await retry(() => readAllowlist(pub, { account: root, keyId, token }))
+const probeTx = await rootSend('setAllowedCalls[] (probe)', { to: KEYCHAIN, data: emptyData })
+check('7a empty-list tx succeeded', probeTx?.status === 'success')
+const [isScoped, scopes] = (await retry(() => pub.readContract({ address: KEYCHAIN, abi: Abis.accountKeychain, functionName: 'getAllowedCalls', args: [root, keyId] }))) as any
+const rules = scopes.find((s: any) => getAddress(s.target) === getAddress(token))?.selectorRules ?? []
+const twm = rules.find((r: any) => r.selector.toLowerCase() === TRANSFER_WITH_MEMO_SELECTOR)
+const recipientsEmpty = !!twm && twm.recipients.length === 0
+check('7b raw getAllowedCalls shows empty recipients', recipientsEmpty, { isScoped, rules })
+let failClosed = false
+try { await readAllowlist(pub, { account: root, keyId, token }) } catch (e) { failClosed = /^unrestricted:/.test((e as Error).message) }
+check('7c readAllowlist fails closed on empty list', failClosed)
 const pf4 = await preflightPay(pub, { account: agent, token, to: stranger, amount: 1_000_000n, memo })
-console.log('probe: allowlist after empty write =', list3, 'preflight to stranger =', JSON.stringify(pf4, (_, v) => (typeof v === 'bigint' ? v.toString() : v)))
-console.log(`EMPTY_LIST_ALLOWS_ANYONE=${pf4.ok}`)
+console.log('probe: preflight to stranger =', JSON.stringify(pf4, (_, v) => (typeof v === 'bigint' ? v.toString() : v)))
+console.log(`EMPTY_LIST_ALLOWS_ANYONE=${probeTx?.status === 'success' && recipientsEmpty && pf4.ok}`)
 
 // 8. hashes
 for (const [label, h] of hashes) console.log(`${label}: ${txUrl(NET, h)}`)
