@@ -6,8 +6,10 @@ import { encodeFunctionData } from 'viem'
 import { Abis } from 'viem/tempo'
 import { useConnection, useSendTransaction, useSignTypedData, useSwitchChain } from 'wagmi'
 import { ApiError, api, errorMessage, type Hex, type PayeeVerification } from '@/lib/api'
+import { useNetworkCheck } from '@/lib/hooks'
 import { chain, txUrl } from '@/lib/wagmi'
 import { ConnectPanel } from '@/components/ConnectButton'
+import { NetworkNotice } from '@/components/NetworkNotice'
 import { Row } from '@/components/Row'
 import { Stepper, type Step, type StepState } from '@/components/Stepper'
 import { card, errorText, fieldClass, fieldLabel, ghostBtn, hint, primaryBtn, sectionLabel, short } from '@/components/ui'
@@ -49,6 +51,7 @@ export function PayeeOnboarding() {
   const [restoreError, setRestoreError] = useState<string | null>(null)
   const [published, setPublished] = useState<{ txHash: Hex; level: number } | null>(null)
   const [dnsLost, setDnsLost] = useState(false)
+  const net = useNetworkCheck()
 
   // Load the saved verification for whichever wallet is connected.
   useEffect(() => {
@@ -173,7 +176,7 @@ export function PayeeOnboarding() {
       title: 'Sign with your wallet',
       state: state(2),
       summary: row?.sigVerified ? 'Signed' : undefined,
-      children: row && <SignStep row={row} onVerified={() => refresh(row.id)} />,
+      children: row && <SignStep row={row} blocked={net.mismatch} onVerified={() => refresh(row.id)} />,
     },
     {
       key: 'dns',
@@ -205,7 +208,9 @@ export function PayeeOnboarding() {
       optional: true,
       state: state(5, row?.masterStatus === 'registered'),
       summary: row?.masterStatus === 'registered' ? row.masterId : row && past(5) ? 'Skipped' : undefined,
-      children: row && <MasterStep row={row} onChange={() => refresh(row.id)} onSkip={() => save({ ...(saved ?? { id: row.id }), skipMaster: true })} />,
+      children: row && (
+        <MasterStep row={row} blocked={net.mismatch} onChange={() => refresh(row.id)} onSkip={() => save({ ...(saved ?? { id: row.id }), skipMaster: true })} />
+      ),
     },
     {
       key: 'publish',
@@ -231,49 +236,52 @@ export function PayeeOnboarding() {
   const attestTx = published?.txHash ?? row?.attestTx ?? null
 
   return (
-    <div className={card}>
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <span className={sectionLabel}>Payee verification</span>
-        <span className="font-mono text-[11px] text-graphite">{active === -1 ? 'Complete' : `Step ${active + 1} of ${steps.length}`}</span>
-      </div>
+    <div className="flex min-w-0 flex-col gap-4">
+      <NetworkNotice check={net} />
+      <div className={card}>
+        <div className="mb-6 flex items-center justify-between gap-3">
+          <span className={sectionLabel}>Payee verification</span>
+          <span className="font-mono text-[11px] text-graphite">{active === -1 ? 'Complete' : `Step ${active + 1} of ${steps.length}`}</span>
+        </div>
 
-      <Stepper steps={steps} />
+        <Stepper steps={steps} />
 
-      {attested && row && (
-        <div className="mt-6 border-t border-black/10 pt-5">
-          <span className={sectionLabel}>Published</span>
-          <p className="mt-2 text-sm leading-relaxed text-ink">
-            {row.legalName} is verified{published ? ` at level ${published.level}` : ''}. Anyone who checks {short(row.wallet)} now sees your company.
-          </p>
-          <div className="mt-4 flex flex-col gap-2">
-            <Link href={`/payee/${row.wallet}`} className={primaryBtn}>
-              View your public profile <span aria-hidden="true">→</span>
-            </Link>
-            {attestTx && (
-              <a href={txUrl(attestTx)} target="_blank" rel="noreferrer" className={ghostBtn}>
-                View the transaction ↗
-              </a>
-            )}
+        {attested && row && (
+          <div className="mt-6 border-t border-black/10 pt-5">
+            <span className={sectionLabel}>Published</span>
+            <p className="mt-2 text-sm leading-relaxed text-ink">
+              {row.legalName} is verified{published ? ` at level ${published.level}` : ''}. Anyone who checks {short(row.wallet)} now sees your company.
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              <Link href={`/payee/${row.wallet}`} className={primaryBtn}>
+                View your public profile <span aria-hidden="true">→</span>
+              </Link>
+              {attestTx && (
+                <a href={txUrl(attestTx)} target="_blank" rel="noreferrer" className={ghostBtn}>
+                  View the transaction ↗
+                </a>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {row && (
-        <div className="mt-6 flex items-center justify-between gap-3 border-t border-black/10 pt-4 font-mono text-[11px] text-graphite">
-          <span className="truncate">{row.id}</span>
-          <button
-            onClick={() => {
-              save(null)
-              setRow(null)
-              setPublished(null)
-              setDnsLost(false)
-            }}
-            className="shrink-0 underline decoration-black/30 underline-offset-4 transition hover:text-ink"
-          >
-            {attested ? 'New verification' : 'Start over'}
-          </button>
-        </div>
-      )}
+        {row && (
+          <div className="mt-6 flex items-center justify-between gap-3 border-t border-black/10 pt-4 font-mono text-[11px] text-graphite">
+            <span className="truncate">{row.id}</span>
+            <button
+              onClick={() => {
+                save(null)
+                setRow(null)
+                setPublished(null)
+                setDnsLost(false)
+              }}
+              className="shrink-0 underline decoration-black/30 underline-offset-4 transition hover:text-ink"
+            >
+              {attested ? 'New verification' : 'Start over'}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -348,7 +356,7 @@ function DetailsStep({ wallet, notice, onCreated }: { wallet: string; notice: st
   )
 }
 
-function SignStep({ row, onVerified }: { row: PayeeVerification; onVerified: () => Promise<unknown> }) {
+function SignStep({ row, blocked, onVerified }: { row: PayeeVerification; blocked: boolean; onVerified: () => Promise<unknown> }) {
   const { mutateAsync: signTypedDataAsync } = useSignTypedData()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -377,7 +385,7 @@ function SignStep({ row, onVerified }: { row: PayeeVerification; onVerified: () 
         <Row label="Wallet">{short(row.typedData.message.wallet)}</Row>
       </div>
       <div className="flex flex-col gap-2">
-        <button onClick={sign} disabled={busy} className={primaryBtn}>
+        <button onClick={sign} disabled={busy || blocked} className={primaryBtn}>
           {busy ? 'Waiting for your signature…' : 'Sign with wallet'}
         </button>
         {error && <p className={errorText}>{error}</p>}
@@ -507,7 +515,7 @@ function LeiStep({ row, onVerified, onSkip }: { row: PayeeVerification; onVerifi
   )
 }
 
-function MasterStep({ row, onChange, onSkip }: { row: PayeeVerification; onChange: () => Promise<unknown>; onSkip: () => void }) {
+function MasterStep({ row, blocked, onChange, onSkip }: { row: PayeeVerification; blocked: boolean; onChange: () => Promise<unknown>; onSkip: () => void }) {
   const { chainId } = useConnection()
   const { mutateAsync: switchChainAsync } = useSwitchChain()
   const { mutateAsync: sendTransactionAsync } = useSendTransaction()
@@ -606,7 +614,7 @@ function MasterStep({ row, onChange, onSkip }: { row: PayeeVerification; onChang
             <Row label="Master ID">{row.masterId}</Row>
           </div>
           <div className="flex flex-col gap-2">
-            <button onClick={register} disabled={busy} className={primaryBtn}>
+            <button onClick={register} disabled={busy || blocked} className={primaryBtn}>
               {registerLabel}
             </button>
             {skip}
@@ -623,7 +631,7 @@ function MasterStep({ row, onChange, onSkip }: { row: PayeeVerification; onChang
             </a>
           )}
           <div className="flex flex-col gap-2">
-            <button onClick={row.masterId ? register : mine} disabled={busy} className={primaryBtn}>
+            <button onClick={row.masterId ? register : mine} disabled={busy || (blocked && !!row.masterId)} className={primaryBtn}>
               {row.masterId ? (phase === 'idle' ? 'Register again' : registerLabel) : phase === 'starting' ? 'Starting…' : 'Try again'}
             </button>
             {row.masterId && txHash && (

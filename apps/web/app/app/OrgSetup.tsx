@@ -7,8 +7,9 @@ import { useConnection } from 'wagmi'
 import { ApiError, api, errorMessage, saveOrgToken, savedOrgIds, type CreatedOrg, type Hex, type Overview, type RootCall } from '@/lib/api'
 import { txUrl } from '@/lib/chain'
 import { usd } from '@/lib/format'
-import { useRootCall, type SendPhase } from '@/lib/hooks'
+import { useNetworkCheck, useRootCall, type SendPhase } from '@/lib/hooks'
 import { ConnectPanel } from '@/components/ConnectButton'
+import { NetworkNotice } from '@/components/NetworkNotice'
 import { Row } from '@/components/Row'
 import { Stepper, type Step, type StepState } from '@/components/Stepper'
 import { card, errorText, fieldClass, fieldLabel, ghostBtn, hint, primaryBtn, sectionLabel, short } from '@/components/ui'
@@ -40,6 +41,7 @@ export function OrgSetup() {
   const { address, isConnected } = useConnection()
   const wallet = isConnected ? address : undefined
   const [setup, setSetup] = useState<Setup | null>(null)
+  const net = useNetworkCheck()
 
   useEffect(() => {
     setSetup(wallet ? readSetup(wallet) : null)
@@ -87,6 +89,7 @@ export function OrgSetup() {
       children: setup ? (
         <AuthorizeStep
           setup={setup}
+          blocked={net.mismatch}
           onSent={(txHash) => save({ ...setup, txHash })}
           onAuthorized={() => {
             // clear the stored progress without re-rendering the form, then open the dashboard
@@ -100,6 +103,7 @@ export function OrgSetup() {
 
   return (
     <div className="flex flex-col gap-4">
+      <NetworkNotice check={net} />
       <SavedOrgs />
       <div className={card}>
         <div className="mb-6 flex items-center justify-between gap-3">
@@ -188,7 +192,7 @@ function DetailsStep({ wallet, onCreated }: { wallet: string; onCreated: (s: Set
   )
 }
 
-function AuthorizeStep({ setup, onSent, onAuthorized }: { setup: Setup; onSent: (txHash: Hex) => void; onAuthorized: () => void }) {
+function AuthorizeStep({ setup, blocked, onSent, onAuthorized }: { setup: Setup; blocked: boolean; onSent: (txHash: Hex) => void; onAuthorized: () => void }) {
   const send = useRootCall()
   const [phase, setPhase] = useState<'idle' | SendPhase | 'confirming'>('idle')
   const [error, setError] = useState<string | null>(null)
@@ -231,7 +235,7 @@ function AuthorizeStep({ setup, onSent, onAuthorized }: { setup: Setup; onSent: 
         <Row label="Can pay">Only your account, for now</Row>
       </div>
       <div className="flex flex-col gap-2">
-        <button onClick={authorize} disabled={busy} className={primaryBtn}>
+        <button onClick={authorize} disabled={busy || blocked} className={primaryBtn}>
           {label}
         </button>
         {setup.txHash && !busy && (

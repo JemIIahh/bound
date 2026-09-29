@@ -33,6 +33,7 @@ export function ApprovalCard({
   invoice,
   rootAddress,
   labelFor,
+  signBlocked = false,
   onChange,
   onDismiss,
 }: {
@@ -42,6 +43,8 @@ export function ApprovalCard({
   rootAddress: Hex
   /** Name for an allowlisted wallet (pins, other approvals), if known. */
   labelFor: (wallet: string) => string | undefined
+  /** The site and the server are on different networks (NetworkNotice): nothing may be signed. */
+  signBlocked?: boolean
   onChange: () => void
   onDismiss: () => void
 }) {
@@ -185,7 +188,7 @@ export function ApprovalCard({
                 Check the sent update again
               </button>
             ) : (
-              <button onClick={sign} disabled={busy || !isRoot} className={primaryBtn}>
+              <button onClick={sign} disabled={busy || !isRoot || signBlocked} className={primaryBtn}>
                 {signLabel}
               </button>
             )}
@@ -206,7 +209,7 @@ export function ApprovalCard({
           {approvable ? (
             <>
               <p className={hint}>Approving adds this wallet to your agent key&apos;s allowlist on Tempo. You sign the update with your root wallet, then the agent pays the invoice.</p>
-              <button onClick={review} disabled={busy || !isRoot} className={`${primaryBtn} mt-2`}>
+              <button onClick={review} disabled={busy || !isRoot || signBlocked} className={`${primaryBtn} mt-2`}>
                 {phase === 'reviewing' ? 'Preparing…' : 'Approve'}
               </button>
               {rootMessage && <p className={hint}>{rootMessage}</p>}

@@ -7,6 +7,7 @@ import { txUrl } from '@/lib/chain'
 import { ago, usd } from '@/lib/format'
 import { useOverview } from '@/lib/hooks'
 import { AgentLog } from '@/components/AgentLog'
+import { NetworkNotice } from '@/components/NetworkNotice'
 import { StatusBadge, isOpenStatus } from '@/components/InvoiceStatus'
 import { Badge, VerdictCard } from '@/components/VerdictCard'
 import { card, errorText, fieldClass, ghostBtn, hint, primaryBtn, sectionLabel, short, smallBtn } from '@/components/ui'
@@ -101,6 +102,7 @@ export function Lab({ orgId }: { orgId: string }) {
       </section>
 
       <div className="flex min-w-0 flex-col gap-4 lg:col-start-2 lg:row-span-2 lg:row-start-1">
+        <NetworkNotice check={state.network} />
         {labDisabled ? (
           <div className={`${card} flex flex-col gap-2`} role="status">
             <span className={sectionLabel}>Attack lab</span>
