@@ -152,7 +152,7 @@ export function ApprovalCard({
         <Outcome result={result} txHash={txHash} onDismiss={onDismiss} />
       ) : prepared && (phase === 'review' || busy) && phase !== 'rejecting' ? (
         <div className="mt-5 border-t border-black/10 pt-5">
-          <span className={sectionLabel}>Your signature sets the allowlist to</span>
+          <span className={sectionLabel}>Allowlist after you sign</span>
           <p className={`mt-2 ${hint}`}>
             Tempo replaces the agent key&apos;s whole recipient list with these {prepared.recipients.length} wallets. The agent can pay only them.
           </p>

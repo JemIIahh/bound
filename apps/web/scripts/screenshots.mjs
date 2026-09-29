@@ -523,7 +523,7 @@ async function runPayer(width) {
   await shot(s, 'dash-log', FIXTURE)
   await s.page.getByRole('button', { name: /INV-1043/ }).click()
   await s.page.getByRole('button', { name: 'Approve', exact: true }).first().click()
-  await s.page.getByText('Your signature sets the allowlist to').waitFor()
+  await s.page.getByText('Allowlist after you sign').waitFor()
   await shot(s, 'dash-review', FIXTURE)
   await click(s.page, 'Sign allowlist update')
   await s.page.getByText('Approved and paid.').waitFor()

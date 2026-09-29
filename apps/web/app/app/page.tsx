@@ -4,7 +4,7 @@ import { OrgSetup } from './OrgSetup'
 
 export const metadata: Metadata = { title: 'Payer dashboard' }
 
-const NEEDS = ["Your company's wallet (the root account)", 'A weekly spending limit for the agent', 'A little stablecoin for network fees']
+const NEEDS = ['Your company wallet (root account)', 'A weekly spending limit for the agent', 'A little stablecoin for network fees']
 
 export default function AppPage() {
   return (
