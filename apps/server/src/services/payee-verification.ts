@@ -40,6 +40,37 @@ export function registeredNameHolder(db: Db, row: Pick<PayeeVerificationRow, 'le
   }) ?? null
 }
 
+/**
+ * LEI reuse: a current registry payee (not superseded or revoked) of ANOTHER company (other wallet and
+ * other domain) already holds this LEI. The same wallet (re-attest) or the same domain (wallet rotation)
+ * may reuse it. Reads the local registry mirror.
+ */
+export function registeredLeiHolder(db: Db, row: Pick<PayeeVerificationRow, 'lei' | 'wallet' | 'domain'>) {
+  const lei = row.lei.trim().toUpperCase()
+  if (!lei) return null
+  const wallet = getAddress(row.wallet)
+  const domain = normalizeDomain(row.domain)
+  const current = db.select().from(payees).where(and(eq(payees.supersededAt, 0), eq(payees.revokedAt, 0))).all()
+  return current.find((p) =>
+    p.lei.trim().toUpperCase() === lei && getAddress(p.wallet) !== wallet && normalizeDomain(p.domain) !== domain,
+  ) ?? null
+}
+
+export const WALLET_OTHER_DOMAIN = 'This wallet is already verified for another domain — use a new wallet to change domains'
+
+/**
+ * Wallet re-pointing: this wallet is already a current registry payee (not superseded or revoked) under
+ * ANOTHER domain. BoundRegistry keeps a wallet's activeFrom on re-attest, so moving it to a new domain would
+ * give that domain the wallet's old age (and let a lookalike look older than the real company). Only a
+ * same-domain re-attest (e.g. a level 1 → 2 upgrade) is allowed. Reads the local registry mirror.
+ */
+export function walletVerifiedForOtherDomain(db: Db, row: Pick<PayeeVerificationRow, 'wallet' | 'domain'>) {
+  const wallet = getAddress(row.wallet)
+  const domain = normalizeDomain(row.domain)
+  const current = db.select().from(payees).where(and(eq(payees.supersededAt, 0), eq(payees.revokedAt, 0))).all()
+  return current.find((p) => getAddress(p.wallet) === wallet && normalizeDomain(p.domain) !== domain) ?? null
+}
+
 export function productionPayeeServices(deps: AppDeps): PayeeServices {
   const { chain, config } = deps
   const pub = chain.pub
@@ -80,6 +111,8 @@ export function productionPayeeServices(deps: AppDeps): PayeeServices {
         if (!holderIsCurrent || self) throw new HttpError(409, 'Domain already verified by another wallet')
         action = 'supersede'
       }
+      // A re-attest keeps the wallet's activeFrom: never move a verified wallet to another domain (see walletVerifiedForOtherDomain).
+      if (self && normalizeDomain(self.domain) !== domain) throw new HttpError(409, WALLET_OTHER_DOMAIN)
 
       const lei = row.leiVerified ? row.lei : '' // the registry stores an LEI only when it was verified
       const masterId = row.masterStatus === 'registered' && row.masterId ? (row.masterId as Hex) : NO_MASTER

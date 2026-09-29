@@ -140,14 +140,61 @@ describe('evaluate', () => {
     expect(r.verdict).toBe('MATCH')
     expect(r.reasons.map((x) => x.code)).not.toContain('domain_mismatch')
   })
-  test('exact own-domain sender adds no sender lookalike_domain (the payee-domain check still sees the similar registration)', () => {
+  test('exact domain with a similar, NEWER registered domain gives no lookalike_domain', () => {
+    // acme.com (the payee) was registered first; acne.com came later, so acme.com imitates nothing
     const r = evaluate(input({
       senderDomain: 'acme.com',
-      registeredDomains: [{ domain: 'acme.com', label: 'Acme Ltd', wallet: acmeWallet }, { domain: 'acne.com', label: 'Acne Inc', wallet: other }],
+      registeredDomains: [
+        { domain: 'acme.com', label: 'Acme Ltd', wallet: acmeWallet, since: NOW - 1000 },
+        { domain: 'acne.com', label: 'Acne Inc', wallet: other, since: NOW - 10 },
+      ],
     }))
-    // only the payee's registered domain vs acne.com; nothing from the sender domain
-    expect(r.reasons.filter((x) => x.code === 'lookalike_domain').map((x) => x.detail)).toEqual(['acme.com imitates acne.com (Acne Inc)'])
-    expect(r.verdict).toBe('CLOSE_MATCH')
+    expect(r.verdict).toBe('MATCH')
+    expect(r.reasons.map((x) => x.code)).not.toContain('lookalike_domain')
+  })
+  test('the newer of two lookalike registrations is flagged, the older is not', () => {
+    const acneWallet = ('0x' + 'ee'.repeat(20)) as `0x${string}`
+    const registeredDomains: VerifyInput['registeredDomains'] = [
+      { domain: 'acme.com', label: 'Acme Ltd', wallet: acmeWallet, since: NOW - 1000 },
+      { domain: 'acne.com', label: 'Acne Inc', wallet: acneWallet, since: NOW - 100 },
+    ]
+    const knownWallets: VerifyInput['knownWallets'] = [{ wallet: acmeWallet, label: 'Acme Ltd', source: 'registry' }, { wallet: acneWallet, label: 'Acne Inc', source: 'registry' }]
+    const newer = evaluate(input({
+      address: acneWallet, resolved: { effective: acneWallet, isVirtual: false, masterId: null, registered: true },
+      payeeName: 'Acne Inc', payee: { ...acme, wallet: acneWallet, legalName: 'Acne Inc', domain: 'acne.com', activeFrom: NOW - 100 },
+      knownWallets, registeredDomains,
+    }))
+    expect(newer.verdict).toBe('CLOSE_MATCH')
+    expect(newer.reasons.filter((x) => x.code === 'lookalike_domain').map((x) => x.detail)).toEqual(['acne.com imitates acme.com (Acme Ltd)'])
+    expect(decideAction(newer)).toBe('ASK')
+
+    const older = evaluate(input({ knownWallets, registeredDomains }))
+    expect(older.verdict).toBe('MATCH')
+    expect(older.reasons.map((x) => x.code)).not.toContain('lookalike_domain')
+  })
+  test('two lookalike registrations of the same age are both flagged', () => {
+    const acneWallet = ('0x' + 'ee'.repeat(20)) as `0x${string}`
+    const registeredDomains: VerifyInput['registeredDomains'] = [
+      { domain: 'acme.com', label: 'Acme Ltd', wallet: acmeWallet, since: NOW - 1000 },
+      { domain: 'acne.com', label: 'Acne Inc', wallet: acneWallet, since: NOW - 1000 },
+    ]
+    const a = evaluate(input({ registeredDomains }))
+    expect(a.verdict).toBe('CLOSE_MATCH')
+    expect(a.reasons.find((x) => x.code === 'lookalike_domain')?.detail).toBe('acme.com imitates acne.com (Acne Inc)')
+    const b = evaluate(input({
+      address: acneWallet, resolved: { effective: acneWallet, isVirtual: false, masterId: null, registered: true },
+      payeeName: 'Acne Inc', payee: { ...acme, wallet: acneWallet, legalName: 'Acne Inc', domain: 'acne.com' }, registeredDomains,
+    }))
+    expect(b.verdict).toBe('CLOSE_MATCH')
+    expect(b.reasons.find((x) => x.code === 'lookalike_domain')?.detail).toBe('acne.com imitates acme.com (Acme Ltd)')
+  })
+  test('without its own registration age, the payee\'s activeFrom is its age', () => {
+    // no registeredDomains entry for the payee wallet: ownSince falls back to payee.activeFrom (NOW - 1000)
+    const older = evaluate(input({ registeredDomains: [{ domain: 'acne.com', label: 'Acne Inc', wallet: other, since: NOW - 10 }] }))
+    expect(older.verdict).toBe('MATCH')
+    const newer = evaluate(input({ registeredDomains: [{ domain: 'acne.com', label: 'Acne Inc', wallet: other, since: NOW - 5000 }] }))
+    expect(newer.verdict).toBe('CLOSE_MATCH')
+    expect(newer.reasons.find((x) => x.code === 'lookalike_domain')?.detail).toBe('acme.com imitates acne.com (Acne Inc)')
   })
   test('lookalike of a different company domain downgrades MATCH to CLOSE_MATCH', () => {
     const r = evaluate(input({

@@ -112,4 +112,25 @@ describe('production remainingLimit', () => {
     expect(calls[0].functionName).toBe('getRemainingLimitWithPeriod')
     expect(calls[0].args).toEqual([root, keyId, '0x20c0000000000000000000000000000000000000'])
   })
+  test('pre-T3 network: when the period-aware read reverts, falls back to getRemainingLimit (single uint256)', async () => {
+    const keyId = ('0x' + '44'.repeat(20)) as `0x${string}`
+    const calls: any[] = []
+    const ops = opsWith({
+      readContract: async (q: any) => {
+        calls.push(q)
+        if (q.functionName === 'getRemainingLimitWithPeriod') throw new Error('execution reverted')
+        return 7_000_000n
+      },
+    })
+    expect(await ops.remainingLimit(root, keyId)).toBe(7_000_000n)
+    expect(calls.map((c) => c.functionName)).toEqual(['getRemainingLimitWithPeriod', 'getRemainingLimit'])
+    expect(calls[1].args).toEqual([root, keyId, '0x20c0000000000000000000000000000000000000'])
+  })
+  test('both reads failing is null (unknown), not a throw', async () => {
+    const keyId = ('0x' + '44'.repeat(20)) as `0x${string}`
+    const readContract = vi.fn(async () => { throw new Error('execution reverted') })
+    const ops = opsWith({ readContract })
+    expect(await ops.remainingLimit(root, keyId)).toBeNull()
+    expect(readContract).toHaveBeenCalledTimes(2)
+  })
 })

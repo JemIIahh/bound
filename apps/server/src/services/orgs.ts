@@ -122,7 +122,7 @@ export async function getOverview(deps: ServiceDeps, orgId: string) {
   if (org.authorized) {
     const [al, rem] = await Promise.allSettled([deps.ops.readAllowlist(root, keyId), deps.ops.remainingLimit(root, keyId)])
     if (al.status === 'fulfilled') { allowlist = al.value; keyStatus = 'ok' } else keyStatus = isUnrestrictedKey(al.reason) ? 'unrestricted' : 'unavailable'
-    if (rem.status === 'fulfilled') remaining = rem.value.toString()
+    if (rem.status === 'fulfilled') remaining = rem.value?.toString() ?? null
   }
 
   const invoiceRows = db.select({

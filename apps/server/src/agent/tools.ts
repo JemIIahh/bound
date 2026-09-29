@@ -44,6 +44,18 @@ function positiveAmount(raw: string): { ok: true; amount: bigint } | { ok: false
   }
 }
 
+/** USD-equivalent tokens an amount string may carry, upper-cased with dots removed (USDC.e → USDCE). */
+const USD_AMOUNT_TOKENS = new Set(['USD', 'USDC', 'USDCE', 'PATHUSD', '$'])
+
+/**
+ * The currency token written inside the amount itself ("300 EUR", "€300"), whatever the separate currency
+ * field says: the agent key pays USD stablecoins 1:1, so any other token must never reach a payment.
+ */
+const amountIsUsd = (raw: string) => {
+  const token = raw.replace(/[\d,.\s]/g, '').toUpperCase()
+  return token === '' || USD_AMOUNT_TOKENS.has(token)
+}
+
 /** Stores the fields the agent read from the (untrusted) invoice. Locked once the invoice is decided or a payment exists. */
 export async function recordInvoiceFields(deps: Pick<ServiceDeps, 'db'>, invoiceId: string, f: Fields) {
   const inv = loadInvoice(deps, invoiceId)
@@ -56,6 +68,7 @@ export async function recordInvoiceFields(deps: Pick<ServiceDeps, 'db'>, invoice
   if (!isAddress(f.address.trim())) return { ok: false as const, error: 'Payment address is not a valid 0x address' }
   const amt = positiveAmount(f.amount)
   if (!amt.ok) return { ok: false as const, error: amt.error }
+  if (!amountIsUsd(f.amount)) return { ok: false as const, error: 'Amount is not in USD stablecoins' }
   const senderDomain = f.senderDomain ? normalizeDomain(f.senderDomain) || null : null
   setInvoice(deps, invoiceId, {
     payeeName, address: getAddress(f.address.trim()), amountBase: amt.amount.toString(), currency: f.currency.trim(),

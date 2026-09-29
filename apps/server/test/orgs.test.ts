@@ -128,6 +128,15 @@ describe('requireOrg + overview', () => {
     expect(res.status).toBe(200)
     expect(res.body).toMatchObject({ allowlist: [], keyStatus: 'unrestricted' })
   })
+  test('overview reports remaining null when the limit cannot be read', async () => {
+    const { app, db, ops } = setup()
+    const { org, token: t } = (await create(app)).body
+    db.update(orgs).set({ authorized: 1 }).where(eq(orgs.id, org.id)).run()
+    ops.remainingLimit.mockResolvedValueOnce(null as any)
+    const res = await request(app).get(`/v1/orgs/${org.id}/overview`).set('authorization', `Bearer ${t}`)
+    expect(res.status).toBe(200)
+    expect(res.body.remaining).toBeNull()
+  })
 })
 
 describe('authorization', () => {

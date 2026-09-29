@@ -38,7 +38,7 @@ PAYEE SIDE                         BOUND (open source)                        PA
 | Verdict | When | Action |
 |---|---|---|
 | `MATCH` | verified payee, name matches | PAY if the wallet is on the org's allowlist, else ASK once |
-| `CLOSE_MATCH` | verified payee but the name is only close (e.g. a different suffix), a verified payee whose own registered domain imitates another verified company's domain, an unregistered wallet whose name resembles a verified payee, or the invoice was sent from another payee's domain | ASK |
+| `CLOSE_MATCH` | verified payee but the name is only close (e.g. a different suffix), a verified payee whose own registered domain is the newer of two lookalike registrations (it imitates an older verified company's domain; the older registration is not flagged, and keeps its age across a wallet rotation), an unregistered wallet whose name resembles a verified payee, or the invoice was sent from another payee's domain | ASK |
 | `NO_MATCH` | unregistered wallet, or the name doesn't match the registered one | ASK |
 | `LOOKALIKE` | the address shares its first 4 and last 4 hex characters with a known wallet, the invoice claims a verified company but pays an unverified wallet, or an unregistered wallet is invoiced from a domain imitating a registered one | BLOCK |
 | `CHANGED` | the wallet was superseded, or is still in its cooling-off period | BLOCK |
@@ -135,6 +135,7 @@ The server (`apps/server`) and the web app (`apps/web`) deploy separately, for e
 ### Known limitations
 
 - A BoundRegistry `supersede` to a different domain leaves the old domain mapped to the old wallet until that verification is revoked.
+- A lookalike domain that was registered BEFORE the real brand joined Bound counts as the older registration, so the brand's own domain is the one flagged (CLOSE_MATCH). Brands should register early. An LEI (level 2) still lets a late brand verify under its own name, but it does not change which domain counts as older.
 - The org token is stored in the browser's `localStorage`: an organization opens in the browser that created it, and anyone with access to that browser profile holds the token.
 - Rate limits are in memory and per process: several server instances each keep their own counts.
 
