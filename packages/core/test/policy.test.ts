@@ -25,4 +25,10 @@ describe('decideAction', () => {
   test('unregistered virtual address is BLOCK', () => {
     expect(decideAction({ ...base, verdict: 'NO_MATCH', reasons: [{ code: 'unregistered_virtual', detail: '' }] })).toBe('BLOCK')
   })
+  test('unregistered virtual is BLOCK even when allowlisted and pinned', () => {
+    expect(decideAction({ ...base, verdict: 'NO_MATCH', allowlisted: true, pinned: true, reasons: [{ code: 'unregistered_virtual', detail: '' }] })).toBe('BLOCK')
+  })
+  test('pinned but not allowlisted is ASK', () => {
+    expect(decideAction({ ...base, verdict: 'MATCH', pinned: true, allowlisted: false })).toBe('ASK')
+  })
 })

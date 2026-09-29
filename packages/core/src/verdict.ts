@@ -2,10 +2,10 @@ import { getAddress, type Address, type Hex } from 'viem'
 import type { OnchainPayee } from './bound-registry'
 import { findLookalike } from './address'
 import { findLookalikeDomain, normalizeDomain } from './domain'
-import { compareNames } from './names'
+import { compareNames, normalizeName } from './names'
 
 export type Verdict = 'MATCH' | 'CLOSE_MATCH' | 'NO_MATCH' | 'LOOKALIKE' | 'CHANGED' | 'REVOKED'
-export type ReasonCode = 'verified' | 'pinned' | 'name_close' | 'name_mismatch' | 'homoglyph_name' | 'unregistered' | 'unregistered_virtual' | 'lookalike_address' | 'lookalike_domain' | 'domain_mismatch' | 'wallet_changed' | 'cooling_off' | 'revoked'
+export type ReasonCode = 'verified' | 'pinned' | 'name_close' | 'name_mismatch' | 'homoglyph_name' | 'unregistered' | 'unregistered_virtual' | 'lookalike_address' | 'lookalike_domain' | 'domain_mismatch' | 'wallet_changed' | 'cooling_off' | 'revoked' | 'claims_verified_payee'
 export type Reason = { code: ReasonCode; detail: string }
 export type KnownWallet = { wallet: Address; label: string; source: 'pin' | 'registry' }
 export type VerifyInput = {
@@ -27,12 +27,18 @@ export type VerifyResult = {
 
 const RANK: Verdict[] = ['LOOKALIKE', 'CHANGED', 'REVOKED', 'NO_MATCH', 'CLOSE_MATCH', 'MATCH']
 
+const inDomain = (d: string, root: string) => d === root || d.endsWith('.' + root)
+
 export function evaluate(i: VerifyInput): VerifyResult {
+  if (i.now > 1e11) throw new Error('evaluate: now must be unix seconds')
   const reasons: Reason[] = []
   const candidates: Verdict[] = []
   const address = getAddress(i.address)
   const effective = getAddress(i.resolved.effective)
   const p = i.payee
+  if (p && getAddress(p.wallet) !== effective) throw new Error('evaluate: payee record does not belong to the destination address')
+  const unregisteredVirtual = i.resolved.isVirtual && !i.resolved.registered
+  const senderDomain = i.senderDomain ? normalizeDomain(i.senderDomain) : null
 
   // 1. Lookalike address: imitates a known wallet it does not resolve to.
   const imitated = findLookalike(address, i.knownWallets, [effective]) ?? findLookalike(effective, i.knownWallets, [effective])
@@ -41,23 +47,48 @@ export function evaluate(i: VerifyInput): VerifyResult {
     candidates.push('LOOKALIKE')
   }
 
-  // 2. Unregistered virtual address — Tempo itself rejects transfers to it.
-  if (i.resolved.isVirtual && !i.resolved.registered) {
+  // 2. Unregistered virtual address: Tempo itself rejects transfers to it.
+  if (unregisteredVirtual) {
     reasons.push({ code: 'unregistered_virtual', detail: `masterId ${i.resolved.masterId} is not registered on Tempo` })
     candidates.push('NO_MATCH')
   }
 
   // 3. Registry status.
   if (!p) {
-    if (i.resolved.registered) {
+    if (!unregisteredVirtual) {
       reasons.push({ code: 'unregistered', detail: 'No verified company is registered for this address' })
       candidates.push('NO_MATCH')
     }
+    if (normalizeName(i.payeeName).homoglyph) reasons.push({ code: 'homoglyph_name', detail: 'Invoice name uses look-alike characters' })
+
+    // Does the invoice claim to be a registry-verified company while paying somewhere else?
+    const byDomain = i.registeredDomains.find(
+      (d) => senderDomain && inDomain(senderDomain, normalizeDomain(d.domain)) && getAddress(d.wallet) !== effective,
+    )
+    const companies = [
+      ...i.knownWallets.filter((k) => k.source === 'registry'),
+      ...i.registeredDomains,
+    ]
+    const claimed =
+      byDomain ??
+      companies.find((c) => {
+        if (getAddress(c.wallet) === effective) return false
+        const n = compareNames(i.payeeName, c.label)
+        return n.result !== 'NO_MATCH' || n.homoglyph
+      })
+    if (claimed) {
+      reasons.push({ code: 'claims_verified_payee', detail: `Invoice claims to be ${claimed.label} (verified wallet ${claimed.wallet}) but pays an unverified address` })
+      candidates.push('LOOKALIKE')
+    }
   } else {
     if (p.revokedAt) { reasons.push({ code: 'revoked', detail: 'Verification revoked' }); candidates.push('REVOKED') }
-    if (p.supersededAt) { reasons.push({ code: 'wallet_changed', detail: `${p.legalName} moved to ${p.successor}` }); candidates.push('CHANGED') }
-    if (p.activeFrom > i.now) { reasons.push({ code: 'cooling_off', detail: `New wallet active from ${new Date(p.activeFrom * 1000).toISOString()}` }); candidates.push('CHANGED') }
-    if (!p.revokedAt && !p.supersededAt) reasons.push({ code: 'verified', detail: `${p.legalName} · ${p.domain}${p.lei ? ' · LEI ' + p.lei : ''}` })
+    if (p.supersededAt) {
+      reasons.push({ code: 'wallet_changed', detail: p.successor ? `${p.legalName} moved to ${p.successor}` : 'Wallet superseded' })
+      candidates.push('CHANGED')
+    }
+    const cooling = p.activeFrom > i.now
+    if (cooling) { reasons.push({ code: 'cooling_off', detail: `New wallet active from ${new Date(p.activeFrom * 1000).toISOString()}` }); candidates.push('CHANGED') }
+    if (!p.revokedAt && !p.supersededAt && !cooling) reasons.push({ code: 'verified', detail: `${p.legalName} · ${p.domain}${p.lei ? ' · LEI ' + p.lei : ''}` })
 
     const name = compareNames(i.payeeName, p.legalName)
     if (name.homoglyph) reasons.push({ code: 'homoglyph_name', detail: 'Invoice name uses look-alike characters' })
@@ -67,14 +98,19 @@ export function evaluate(i: VerifyInput): VerifyResult {
   }
 
   // 4. Sender domain.
-  if (i.senderDomain) {
-    const d = normalizeDomain(i.senderDomain)
-    const lookDomain = findLookalikeDomain(d, i.registeredDomains)
-    if (lookDomain && (!p || getAddress(lookDomain.wallet) !== getAddress(p.wallet))) {
-      reasons.push({ code: 'lookalike_domain', detail: `${d} imitates ${lookDomain.domain} (${lookDomain.label})` })
-      if (!p) candidates.push('LOOKALIKE')
-    } else if (p && d !== p.domain && !d.endsWith('.' + p.domain)) {
-      reasons.push({ code: 'domain_mismatch', detail: `Invoice sent from ${d}; registered domain is ${p.domain}` })
+  if (senderDomain) {
+    const own = p ? normalizeDomain(p.domain) : null
+    if (!(own && inDomain(senderDomain, own))) {
+      const others = i.registeredDomains
+        .filter((d) => !p || getAddress(d.wallet) !== getAddress(p.wallet))
+        .map((d) => ({ ...d, domain: normalizeDomain(d.domain) }))
+      const look = findLookalikeDomain(senderDomain, others)
+      if (look) {
+        reasons.push({ code: 'lookalike_domain', detail: `${senderDomain} imitates ${look.domain} (${look.label})` })
+        candidates.push(p ? 'CLOSE_MATCH' : 'LOOKALIKE')
+      } else if (own) {
+        reasons.push({ code: 'domain_mismatch', detail: `Invoice sent from ${senderDomain}; registered domain is ${own}` })
+      }
     }
   }
 
