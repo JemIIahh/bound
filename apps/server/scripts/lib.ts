@@ -3,6 +3,7 @@ import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { config as loadDotenv } from 'dotenv'
+import { Abis } from 'viem/tempo'
 import { getNetwork, publicClientFor } from '@bound/core'
 
 export const SERVER_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -86,3 +87,31 @@ export function writeWebEnv() {
 }
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+type Pub = ReturnType<typeof publicClientFor>
+export const tokenBalance = (pub: Pub, who: `0x${string}`) =>
+  pub.readContract({ address: getNetwork('testnet').token, abi: Abis.tip20, functionName: 'balanceOf', args: [who] }) as Promise<bigint>
+
+/**
+ * Tops up an address from the Moderato faucet when its pathUSD balance is below `min` (base units).
+ * Tries the node's tempo_fundAddress RPC, then the public faucet API; the RPC can time out even though
+ * the funds land, so the balance is polled either way.
+ */
+export async function ensureFunded(pub: Pub, who: `0x${string}`, label: string, min = 1_000_000n) {
+  await assertTestnetChain(pub)
+  const before = await tokenBalance(pub, who)
+  if (before >= min) return before
+  try { await pub.request({ method: 'tempo_fundAddress' as any, params: [who] as any }) } catch (e) {
+    console.log(`  tempo_fundAddress(${label}): ${(e as Error).message.split('\n')[0]}; trying the faucet API`)
+    try {
+      const r = await fetch('https://tempo.xyz/developers/api/faucet', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ address: who }) })
+      console.log(`  faucet API(${label}): HTTP ${r.status}`)
+    } catch (e2) { console.log(`  faucet API(${label}): ${(e2 as Error).message}`) }
+  }
+  for (let i = 0; i < 45; i++) {
+    const b = await tokenBalance(pub, who).catch(() => 0n)
+    if (b > before) { console.log(`  funded ${label} ${who}: ${Number(b) / 1e6} pathUSD`); return b }
+    await sleep(2000)
+  }
+  die(`could not fund ${label} ${who} from the testnet faucet`)
+}
