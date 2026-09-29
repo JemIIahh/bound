@@ -3,7 +3,8 @@ import { Abis, Account } from 'viem/tempo'
 import { decodeTempoError, type TempoErrorCode } from './errors'
 import { getNetwork, type EstimateClient, type NetworkName } from './networks'
 
-const TEMPO_CHAIN_IDS = [4217, 42431]
+const TEMPO_MAINNET_ID = 4217
+const TEMPO_CHAIN_IDS = [TEMPO_MAINNET_ID, 42431]
 
 export function assertTempoClient(client: { chain?: { id: number } | null }): void {
   const id = client.chain?.id
@@ -35,6 +36,8 @@ export function agentAccount(privateKey: Hex, root: Address) {
 }
 
 type AgentAccount = ReturnType<typeof agentAccount>
+/** The client forceSendWithKey drives (injectable so tests can record every RPC call). */
+export type ForceSendClient = ReturnType<typeof clientFor>
 
 function clientFor(network: NetworkName, account: AgentAccount) {
   const n = getNetwork(network)
@@ -82,11 +85,76 @@ export async function payWithKey(p: { network: NetworkName; account: AgentAccoun
   } catch (e) {
     throw new PaymentOutcomeUnknown(txHash, e)
   }
-  const status = receipt.status === 'success' ? 'success' : 'reverted'
+  return fromReceipt(txHash, receipt)
+}
+
+function fromReceipt(txHash: Hex, receipt: any) {
+  const status: 'success' | 'reverted' = receipt.status === 'success' ? 'success' : 'reverted'
   return {
     txHash,
-    receiptTxHash: receipt.transactionHash,
+    receiptTxHash: receipt.transactionHash as Hex,
     status,
     ...(status === 'reverted' ? { error: { code: 'Other' as TempoErrorCode, message: 'Reverted onchain; reason not in receipt — see preflight' } } : {}),
   }
+}
+
+/**
+ * Gas limit for forced (lab) sends. Measured on Moderato: a keychain-rejected transferWithMemo uses
+ * 37,444 gas; a successful one to a fresh account 301,414 (estimate 318,432). 1M leaves >3x headroom.
+ */
+export const FORCE_SEND_GAS = 1_000_000n
+
+/**
+ * ATTACK LAB ONLY ("guard off"). Signs transferWithMemo with the access key and broadcasts it with NO
+ * simulation: chain id, nonce, fees and gas are all set explicitly, so viem runs neither estimateGas
+ * (which refuses a keychain-violating call before broadcast, i.e. no tx hash) nor eth_fillTransaction
+ * (whose simulation is up to the node). Tempo then enforces the key's scope at execution: a payment to
+ * a recipient outside the allowlist is MINED and REVERTS, leaving a public tx hash (proved on Moderato
+ * by scripts/testnet-guard-off.ts). Never use this for real payments.
+ * Throws PaymentRejected (nothing sent) or PaymentOutcomeUnknown (broadcast began; check txHash).
+ */
+export async function forceSendWithKey(
+  p: { network: NetworkName; account: AgentAccount; token: Address; to: Address; amount: bigint; memo: Hex; gas?: bigint },
+  opts: { allowMainnet?: boolean; client?: ForceSendClient } = {},
+): Promise<Awaited<ReturnType<typeof payWithKey>>> {
+  // Refuse before building a client or touching the network.
+  const expected = getNetwork(p.network).chain.id
+  if (expected === TEMPO_MAINNET_ID && !opts.allowMainnet) {
+    throw new PaymentRejected('Other', 'Refusing to force-send on Tempo mainnet (4217) without allowMainnet')
+  }
+  const client = opts.client ?? clientFor(p.network, p.account)
+  assertTempoClient(client)
+  if (client.chain?.id !== expected) {
+    throw new PaymentRejected('Other', `Refusing to force-send: client chain ${client.chain?.id} is not ${p.network} (${expected})`)
+  }
+  let serialized: Hex
+  try {
+    const [nonce, fees] = await Promise.all([
+      client.getTransactionCount({ address: p.account.address, blockTag: 'pending' }),
+      client.estimateFeesPerGas(),
+    ])
+    const request: any = await client.prepareTransactionRequest({
+      account: p.account,
+      to: p.token,
+      data: transferData(p.to, p.amount, p.memo),
+      chainId: client.chain.id,
+      nonce,
+      gas: p.gas ?? FORCE_SEND_GAS,
+      maxFeePerGas: fees.maxFeePerGas,
+      maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
+      feeToken: p.token,
+    } as any)
+    serialized = (await client.signTransaction(request)) as Hex
+  } catch (e) {
+    const d = decodeTempoError(e)
+    throw new PaymentRejected(d.code, d.message)
+  }
+  const txHash = keccak256(serialized)
+  let receipt: any
+  try {
+    receipt = await client.sendRawTransactionSync({ serializedTransaction: serialized } as any)
+  } catch (e) {
+    throw new PaymentOutcomeUnknown(txHash, e)
+  }
+  return fromReceipt(txHash, receipt)
 }

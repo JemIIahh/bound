@@ -127,10 +127,12 @@ export async function getOverview(deps: ServiceDeps, orgId: string) {
   const approvalRows = db.select().from(approvals).where(eq(approvals.orgId, orgId)).orderBy(desc(approvals.createdAt)).limit(100).all()
   const eventRows = db.select().from(events).where(and(eq(events.orgId, orgId), ne(events.kind, 'check'))).orderBy(desc(events.createdAt)).limit(100).all()
 
-  const blocked = db.select({ amountBase: invoices.amountBase }).from(invoices).where(and(eq(invoices.orgId, orgId), eq(invoices.status, 'blocked'))).all()
+  // counters describe real traffic only: attack-lab invoices (lab = 1) and their payments are left out
+  const blocked = db.select({ amountBase: invoices.amountBase }).from(invoices).where(and(eq(invoices.orgId, orgId), eq(invoices.status, 'blocked'), eq(invoices.lab, 0))).all()
   const protectedBase = blocked.reduce((sum, r) => { try { return sum + BigInt(r.amountBase ?? '0') } catch { return sum } }, 0n)
   const checks = db.select({ n: count() }).from(events).where(and(eq(events.orgId, orgId), eq(events.kind, 'check'))).get()?.n ?? 0
-  const paid = db.select({ n: count() }).from(payments).where(and(eq(payments.orgId, orgId), eq(payments.status, 'confirmed'))).get()?.n ?? 0
+  const paid = db.select({ n: count() }).from(payments).innerJoin(invoices, eq(invoices.id, payments.invoiceId))
+    .where(and(eq(payments.orgId, orgId), eq(payments.status, 'confirmed'), eq(invoices.lab, 0))).get()?.n ?? 0
 
   return {
     org: {
