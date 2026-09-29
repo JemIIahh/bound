@@ -73,6 +73,109 @@ export type Payee = {
   updatedBlock: number
 }
 
+// ---------- payer (org) API ----------
+
+/** A call the org's root wallet signs and sends (built by the server). */
+export type RootCall = { to: Hex; data: Hex }
+
+/** Stored verdict: the verify result plus the action for this org. */
+export type StoredVerdict = VerifyResult & { action: Action; checkId: string }
+
+/** `POST /v1/orgs` */
+export type CreatedOrg = { org: { id: string; name: string; rootAddress: Hex; agentKeyAddress: Hex }; token: string; authorizeCall: RootCall }
+
+export type InvoiceStatus = 'new' | 'processing' | 'awaiting_approval' | 'over_limit' | 'paid' | 'blocked' | 'failed' | 'unconfirmed'
+
+export type OrgInvoice = {
+  id: string
+  payeeName: string | null
+  address: Hex | null
+  amountBase: string | null
+  currency: string | null
+  invoiceNo: string | null
+  senderDomain: string | null
+  dueDate: string | null
+  verdict: StoredVerdict | null
+  action: Action | null
+  status: InvoiceStatus
+  lab: number
+  createdAt: number
+}
+
+export type ApprovalStatus = 'pending' | 'prepared' | 'approved' | 'rejected'
+export type Approval = {
+  id: string
+  orgId: string
+  invoiceId: string
+  wallet: Hex
+  label: string
+  status: ApprovalStatus
+  txHash: Hex | null
+  createdAt: number
+  preparedAt: number | null
+  verdict: StoredVerdict | null
+}
+
+export type Pin = { orgId: string; wallet: Hex; label: string; approvedAt: number; txHash: Hex | null; active: number }
+
+export type OrgEvent = {
+  id: string
+  orgId: string | null
+  kind: string
+  invoiceId: string | null
+  txHash: Hex | null
+  createdAt: number
+  detail: Record<string, unknown> | null
+}
+
+export type Payment = { id: string; invoiceId: string; toAddress: Hex; amountBase: string; txHash: Hex | null; status: string; createdAt: number }
+
+/** `GET /v1/orgs/:orgId/overview` */
+export type Overview = {
+  org: {
+    id: string
+    name: string
+    rootAddress: Hex
+    agentKeyAddress: Hex
+    limitBase: string
+    periodSeconds: number
+    authorized: boolean
+    authorizeTx: Hex | null
+    createdAt: number
+  }
+  keyStatus: 'unauthorized' | 'ok' | 'unrestricted' | 'unavailable'
+  allowlist: Hex[]
+  capacity: { used: number; max: number }
+  remaining: string | null
+  pins: Pin[]
+  approvals: Approval[]
+  invoices: OrgInvoice[]
+  payments: Payment[]
+  events: OrgEvent[]
+  counters: { checks: number; paid: number; blocked: number; protectedBase: string }
+}
+
+export type AgentLogEntry = { at: number; kind: 'tool_call' | 'tool_result' | 'text'; name?: string; data: unknown }
+
+/** `GET /v1/orgs/:orgId/invoices/:invoiceId` */
+export type InvoiceDetail = OrgInvoice & {
+  orgId: string
+  raw: string
+  agentLog: AgentLogEntry[]
+  payment: { status: string; toAddress: Hex; amountBase: string; txHash: Hex | null; txUrl: string | null } | null
+}
+
+/** `POST /v1/orgs/:orgId/approvals/:id/prepare` */
+export type PreparedApproval = {
+  call: RootCall
+  /** The whole allowlist the signature sets. */
+  recipients: Hex[]
+  /** Wallets in `recipients` only because another approval is pending. */
+  carried: Hex[]
+}
+
+export type PayResult = { status: 'paid' | 'asked' | 'blocked' | 'failed'; txHash?: Hex; reason?: string; approvalId?: string }
+
 export type ApiIssue = { path: (string | number)[]; message: string }
 
 export class ApiError extends Error {
@@ -111,6 +214,18 @@ export function saveOrgToken(orgId: string, token: string) {
     localStorage.setItem(orgTokenKey(orgId), token)
   } catch {
     // storage blocked: the token only lives for this page view
+  }
+}
+
+/** Org ids this browser holds a token for. */
+export function savedOrgIds(): string[] {
+  const prefix = orgTokenKey('')
+  try {
+    return Object.keys(localStorage)
+      .filter((k) => k.startsWith(prefix) && k.length > prefix.length)
+      .map((k) => k.slice(prefix.length))
+  } catch {
+    return []
   }
 }
 
