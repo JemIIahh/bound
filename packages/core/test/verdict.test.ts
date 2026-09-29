@@ -123,7 +123,7 @@ describe('evaluate', () => {
     expect(r.reasons.map((x) => x.code)).toEqual(['unregistered'])
   })
   test('unregistered non-virtual address always gets unregistered reason', () => {
-    const r = evaluate(unreg({ payeeName: 'Globex' }))
+    const r = evaluate(unreg({ payeeName: 'Globex', resolved: { effective: other, isVirtual: false, masterId: null, registered: false } }))
     expect(r.reasons.map((x) => x.code)).toContain('unregistered')
   })
   test('lookalike address with its own payee record and matching name is LOOKALIKE', () => {
@@ -153,7 +153,7 @@ describe('evaluate', () => {
       senderDomain: 'acne.co',
       registeredDomains: [{ domain: 'acme.com', label: 'Acme Ltd', wallet: acmeWallet }, { domain: 'acne.com', label: 'Acne Inc', wallet: other }],
     }))
-    expect(r.reasons.map((x) => x.code)).toContain('lookalike_domain')
+    expect(r.reasons.find((x) => x.code === 'lookalike_domain')?.detail).toContain('Acne Inc')
     expect(r.verdict).toBe('CLOSE_MATCH')
   })
   test('superseded without successor has clean detail and no verified reason', () => {
@@ -170,5 +170,54 @@ describe('evaluate', () => {
     const flags = { pinned: true, allowlisted: true }
     expect(decideAction(evaluate(input({ ...flags, payee: { ...acme, supersededAt: NOW - 10, successor: other } })))).toBe('BLOCK')
     expect(decideAction(evaluate(input({ ...flags, payee: { ...acme, revokedAt: NOW - 5 } })))).toBe('BLOCK')
+  })
+
+  const codes = (r: { reasons: { code: string }[] }) => r.reasons.map((x) => x.code)
+  test('strong claim by name only', () => {
+    const r = evaluate(unreg({ payeeName: 'ACME Limited' }))
+    expect(r.verdict).toBe('LOOKALIKE')
+    expect(codes(r)).toContain('claims_verified_payee')
+  })
+  test('strong claim by domain only', () => {
+    const r = evaluate(unreg({ payeeName: 'Globex', senderDomain: 'accounts@mail.acme.com' }))
+    expect(r.verdict).toBe('LOOKALIKE')
+    expect(codes(r)).toContain('claims_verified_payee')
+  })
+  test('pin-sourced label never claims', () => {
+    const r = evaluate(unreg({
+      payeeName: 'Initech Ltd',
+      knownWallets: [{ wallet: acmeWallet, label: 'Acme Ltd', source: 'registry' }, { wallet: '0x' + 'cd'.repeat(20) as `0x${string}`, label: 'Initech Ltd', source: 'pin' }],
+    }))
+    expect(r.verdict).toBe('NO_MATCH')
+    expect(codes(r)).not.toContain('claims_verified_payee')
+    expect(codes(r)).not.toContain('resembles_verified_payee')
+  })
+  test('weak close name resembles verified payee: ASK, or PAY when pinned+allowlisted', () => {
+    const r = evaluate(unreg({ payeeName: 'Acme Plumbing Services' }))
+    expect(r.verdict).toBe('CLOSE_MATCH')
+    expect(codes(r)).toContain('resembles_verified_payee')
+    expect(codes(r)).not.toContain('claims_verified_payee')
+    expect(decideAction(r)).toBe('ASK')
+    expect(decideAction(evaluate(unreg({ payeeName: 'Acme Plumbing Services', pinned: true, allowlisted: true })))).toBe('PAY')
+  })
+  test('unrelated pinned+allowlisted name with a registry present is PAY', () => {
+    const r = evaluate(unreg({ payeeName: 'Yıldız Tekstil', pinned: true, allowlisted: true }))
+    expect(codes(r)).not.toContain('claims_verified_payee')
+    expect(decideAction(r)).toBe('PAY')
+  })
+  test('guard: NaN, zero and negative now throw', () => {
+    for (const now of [NaN, 0, -5]) expect(() => evaluate(input({ now }))).toThrow('unix seconds')
+  })
+  test('verified payee invoiced from another registered company domain is CLOSE_MATCH', () => {
+    const acneWallet = ('0x' + 'ee'.repeat(20)) as `0x${string}`
+    const r = evaluate(input({
+      address: acneWallet, resolved: { effective: acneWallet, isVirtual: false, masterId: null, registered: true },
+      payeeName: 'Acne Inc', senderDomain: 'acme.com',
+      payee: { ...acme, wallet: acneWallet, legalName: 'Acne Inc', domain: 'acne.com' },
+      knownWallets: [{ wallet: acmeWallet, label: 'Acme Ltd', source: 'registry' }, { wallet: acneWallet, label: 'Acne Inc', source: 'registry' }],
+      registeredDomains: [{ domain: 'acme.com', label: 'Acme Ltd', wallet: acmeWallet }, { domain: 'acne.com', label: 'Acne Inc', wallet: acneWallet }],
+    }))
+    expect(codes(r)).toContain('domain_of_other_payee')
+    expect(r.verdict).toBe('CLOSE_MATCH')
   })
 })
