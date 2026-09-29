@@ -37,7 +37,8 @@ export type ChainOps = {
   /** Onchain registry read, used when the local mirror has no record for a wallet. */
   readPayee: (wallet: Address) => Promise<OnchainPayee | null>
   readKey: (account: Address, keyId: Address) => Promise<{ expiry: bigint; enforceLimits: boolean; isRevoked: boolean }>
-  remainingLimit: (account: Address, keyId: Address) => Promise<bigint>
+  /** Remaining spending limit of the key for the payment token; null when neither keychain read works. */
+  remainingLimit: (account: Address, keyId: Address) => Promise<bigint | null>
   /** Demo only: signs and sends a call with DEMO_ROOT_PRIVATE_KEY. */
   sendDemoRoot: (call: { to: Address; data: Hex }) => Promise<Hex>
 }
@@ -428,10 +429,22 @@ export function productionChainOps(deps: AppDeps): ChainOps {
     },
 
     async remainingLimit(account, keyId) {
+      const args = [account, keyId, token] as const
       // getRemainingLimitWithPeriod returns (remaining uint256, periodEnd uint64); the period-aware read
       // reflects a rolled-over period, which plain getRemainingLimit may not
-      const [remaining] = (await pub.readContract({ address: KEYCHAIN, abi: Abis.accountKeychain, functionName: 'getRemainingLimitWithPeriod', args: [account, keyId, token] })) as readonly [bigint, bigint]
-      return remaining
+      try {
+        const [remaining] = (await pub.readContract({ address: KEYCHAIN, abi: Abis.accountKeychain, functionName: 'getRemainingLimitWithPeriod', args })) as readonly [bigint, bigint]
+        return remaining
+      } catch (e) {
+        // pre-T3 networks have no period-aware read (it reverts): fall back to the single-uint256 getRemainingLimit, as viem does
+        console.warn('[chain] getRemainingLimitWithPeriod failed; trying getRemainingLimit', e)
+      }
+      try {
+        return (await pub.readContract({ address: KEYCHAIN, abi: Abis.accountKeychain, functionName: 'getRemainingLimit', args })) as bigint
+      } catch (e) {
+        console.error('[chain] remaining limit unavailable', e)
+        return null
+      }
     },
 
     async sendDemoRoot(call) {
