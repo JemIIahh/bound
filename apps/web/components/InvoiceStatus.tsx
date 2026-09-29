@@ -23,6 +23,11 @@ export function StatusBadge({ status }: { status: string }) {
   return <Badge tone={s.tone}>{s.label}</Badge>
 }
 
+/** Plain-language reasons the server records when it refuses to pay (payInvoice `reason`, event detail.reason). */
+export const FAIL_REASONS: Record<string, string> = {
+  currency_unsupported: 'Unsupported currency — Bound pays in USD stablecoins only',
+}
+
 /** Plain-language reasons the server records on blocked events. */
 export const BLOCK_REASONS: Record<string, string> = {
   duplicate_invoice: 'Already paid: duplicate invoice',

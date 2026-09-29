@@ -1,8 +1,10 @@
 import { keccak256, stringToHex, getAddress, zeroAddress, type Address, type Hex } from 'viem'
 import { Abis } from 'viem/tempo'
-import { ADDRESS_REGISTRY, boundRegistryAbi, normalizeDomain, readPayee } from '@bound/core'
+import { and, eq } from 'drizzle-orm'
+import { ADDRESS_REGISTRY, boundRegistryAbi, compareNames, normalizeDomain, readPayee } from '@bound/core'
 import { HttpError, type AppDeps } from '../app'
-import type { payeeVerifications } from '../db/schema'
+import type { Db } from '../db/client'
+import { payees, type payeeVerifications } from '../db/schema'
 import { resolveTxt } from './dns'
 import { lookupLei } from './gleif'
 import { mineSalt } from './salt-miner'
@@ -21,6 +23,22 @@ export type PayeeServices = {
 }
 
 const NO_MASTER = '0x00000000' as Hex
+
+/**
+ * Name squatting: a current registry payee (not superseded or revoked) of ANOTHER company (other wallet
+ * and other domain) already verified under this legal name, exactly or with look-alike characters.
+ * Only an LEI-verified (level 2) attestation may then claim the same name. Reads the local registry mirror.
+ */
+export function registeredNameHolder(db: Db, row: Pick<PayeeVerificationRow, 'legalName' | 'wallet' | 'domain'>) {
+  const wallet = getAddress(row.wallet)
+  const domain = normalizeDomain(row.domain)
+  const current = db.select().from(payees).where(and(eq(payees.supersededAt, 0), eq(payees.revokedAt, 0))).all()
+  return current.find((p) => {
+    if (getAddress(p.wallet) === wallet || normalizeDomain(p.domain) === domain) return false
+    const n = compareNames(row.legalName, p.legalName)
+    return n.result === 'MATCH' || (n.homoglyph && n.result === 'CLOSE_MATCH')
+  }) ?? null
+}
 
 export function productionPayeeServices(deps: AppDeps): PayeeServices {
   const { chain, config } = deps

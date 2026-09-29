@@ -6,8 +6,9 @@ import { compareNames, normalizeDomain, normalizeName } from '@bound/core'
 import { HttpError, type AppDeps } from '../app'
 import { newId, newToken } from '../crypto'
 import { payees, payeeVerifications } from '../db/schema'
-import { productionPayeeServices, type PayeeServices, type PayeeVerificationRow } from '../services/payee-verification'
+import { productionPayeeServices, registeredNameHolder, type PayeeServices, type PayeeVerificationRow } from '../services/payee-verification'
 import { processMiningQueue, type SerialJobQueue } from '../services/mining-queue'
+import { perIpLimit } from '../rate-limit'
 
 const DOMAIN_RE = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/
 const CONTROL_OR_FORMAT = /[\p{Cc}\p{Cf}]/u
@@ -83,6 +84,9 @@ export function payeesRouter(
   const { db } = deps
   const r = express.Router()
   const attesting = new Set<string>()
+  // the proof checks call out to DNS-over-HTTPS and GLEIF: 30 per minute per IP each
+  const dnsLimit: express.RequestHandler<any> = perIpLimit(30)
+  const leiLimit: express.RequestHandler<any> = perIpLimit(30)
 
   const load = (id: string) => {
     const row = db.select().from(payeeVerifications).where(eq(payeeVerifications.id, id)).get()
@@ -141,7 +145,7 @@ export function payeesRouter(
     res.json({ sigVerified })
   })
 
-  r.post('/payee-verifications/:id/check-dns', async (req, res) => {
+  r.post('/payee-verifications/:id/check-dns', dnsLimit, async (req, res) => {
     const row = loadOpen(req.params.id)
     const found = await services.resolveTxt(dnsRecordFor(row).name)
     const dnsVerified = hasDnsProof(found, row)
@@ -149,7 +153,7 @@ export function payeesRouter(
     res.json({ dnsVerified, found })
   })
 
-  r.post('/payee-verifications/:id/check-lei', async (req, res) => {
+  r.post('/payee-verifications/:id/check-lei', leiLimit, async (req, res) => {
     const row = loadOpen(req.params.id)
     if (!row.lei) throw new HttpError(409, 'No LEI on this verification')
     const record = await services.lookupLei(row.lei)
@@ -188,6 +192,10 @@ export function payeesRouter(
   r.post('/payee-verifications/:id/attest', async (req, res) => {
     const row = loadOpen(req.params.id)
     if (!row.sigVerified || !row.dnsVerified) throw new HttpError(409, 'Signature and DNS proof required')
+    // Wallet + DNS proofs do not stop a second company from claiming a name already in the registry.
+    if (!row.leiVerified && registeredNameHolder(db, row)) {
+      throw new HttpError(409, 'This legal name is already verified by another company; LEI verification required')
+    }
     if (attesting.has(row.id)) throw new HttpError(409, 'Attestation already in progress')
     attesting.add(row.id)
     try {

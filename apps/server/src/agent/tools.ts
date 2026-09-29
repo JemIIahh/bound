@@ -79,32 +79,26 @@ export const LAB_GATE_REASON = 'lab only force-sends payments Tempo will refuse'
 const RECEIPT_TIMEOUT_MS = 60_000
 const RECEIPT_POLL_MS = 2_000
 
-/** `limitBase` is the key's FULL per-period spending limit (null if unreadable). */
-type LabTransfer = { orgId: string; invoiceId: string; to: Address; amount: bigint; memo: Hex; limitBase: bigint | null }
+type LabTransfer = { orgId: string; invoiceId: string; to: Address; amount: bigint; memo: Hex }
 
 /**
- * The lab force-sends only what Tempo is certain to refuse at execution:
- * - CallNotAllowed: the recipient is outside the key's allowlist (no time-dependent state);
- * - SpendingLimitExceeded only when the amount exceeds the FULL per-period limit. A smaller amount
- *   could succeed if the limit period rolls over (refills) between preflight and execution.
+ * The lab force-sends only what Tempo is certain to refuse at execution: CallNotAllowed, i.e. the
+ * recipient is outside the key's allowlist (no time-dependent state). A SpendingLimitExceeded
+ * preflight is never force-sent: the stored limit can drift from the onchain one, and a period
+ * roll-over (refill) between preflight and execution could let the payment through.
  */
-function tempoWillRefuse(pre: { ok: false; code: string }, t: LabTransfer): boolean {
-  if (pre.code === 'CallNotAllowed') return true
-  return pre.code === 'SpendingLimitExceeded' && t.limitBase !== null && t.amount > t.limitBase
+function tempoWillRefuse(pre: { ok: false; code: string }): boolean {
+  return pre.code === 'CallNotAllowed'
 }
 
-const parseBase = (v: string): bigint | null => {
-  try { return BigInt(v) } catch { return null }
-}
 type Locked = { kind: 'done'; result: RawTransferResult } | { kind: 'maybe_sent'; paymentId: string; txHash?: Hex; code?: string }
 
 /**
  * ATTACK LAB ONLY ("guard off"): Bound's payee checks are off, so the demo can show Tempo itself
  * refusing the payment. Safety rails that stay on:
  * - lab invoices of an authorized org only, and at most one transfer per invoice;
- * - it broadcasts ONLY when Tempo is certain to refuse it: preflight CallNotAllowed, or
- *   SpendingLimitExceeded for an amount above the full per-period limit (tempoWillRefuse). A payment
- *   Tempo would or might accept (or an unknown preflight) is never sent, so the lab cannot move funds;
+ * - it broadcasts ONLY when Tempo is certain to refuse it: preflight CallNotAllowed (tempoWillRefuse).
+ *   A payment Tempo would or might accept (or an unknown preflight) is never sent, so the lab cannot move funds;
  * - the send is forced (no simulation) so the refusal is a mined, reverted tx with a public hash;
  * - it runs under the per-org lock (no nonce race with payInvoice); the lock is not re-entrant,
  *   so nothing inside it may call payInvoice. A possibly-broadcast outcome is recorded as 'unknown'
@@ -121,7 +115,7 @@ export async function rawTransfer(deps: ServiceDeps, invoiceId: string, p: { to:
   const amt = positiveAmount(p.amount)
   if (!amt.ok) return { ok: false, error: amt.error }
   const t: LabTransfer = {
-    orgId: inv.orgId, invoiceId, to, amount: amt.amount, limitBase: parseBase(org.limitBase),
+    orgId: inv.orgId, invoiceId, to, amount: amt.amount,
     memo: memoFromInvoice(p.memo.trim() || inv.invoiceNo?.trim() || inv.id),
   }
 
@@ -169,7 +163,7 @@ async function rawTransferLocked(deps: ServiceDeps, t: LabTransfer): Promise<Loc
 
   let pre: { ok: true } | { ok: false; code: string; message: string } | null = null
   try { pre = await deps.ops.preflight({ orgId, to, amount, memo }) } catch (e) { console.error('[lab] preflight errored', invoiceId, e) }
-  if (!pre || pre.ok || !tempoWillRefuse(pre, t)) {
+  if (!pre || pre.ok || !tempoWillRefuse(pre)) {
     // Tempo would or might accept this payment (or we cannot tell): the lab never sends it.
     setPayment(deps, paymentId, { status: 'rejected' })
     setInvoice(deps, invoiceId, { status: 'blocked' })

@@ -60,6 +60,8 @@ function describe(e: OrgEvent, payee: string | undefined): string {
       return `Sent ${amount ? `${amount} ` : ''}to ${to}, awaiting confirmation on Tempo`
     case 'preflight_failed':
       return `Tempo's pre-check refused a payment to ${to}${str(d.code) ? ` (${str(d.code)})` : ''}`
+    case 'currency_unsupported':
+      return `Didn't pay ${to}: the invoice is in ${str(d.currency) || 'an unknown currency'}. Bound pays in USD stablecoins only`
     case 'key_unrestricted':
       return "The agent key has no recipient restriction. Payments are stopped"
     default:

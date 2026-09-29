@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest'
-import { AllowlistError, PaymentOutcomeUnknown, PaymentRejected } from '@bound/core'
+import { AllowlistError, memoFromInvoice, PaymentOutcomeUnknown, PaymentRejected } from '@bound/core'
 import { createDb, migrate } from '../src/db/client'
 import { approvals, events, invoices, orgs, payees, payments, pins } from '../src/db/schema'
 import { isUniqueViolation, mapSendError, payInvoice, PaymentNotSent, productionChainOps } from '../src/services/payments'
@@ -224,6 +224,78 @@ describe('payInvoice', () => {
     db.update(invoices).set({ amountBase: '999', invoiceNo: 'OTHER' }).where(eq(invoices.id, 'inv1')).run()
     await payInvoice(deps as any, 'inv1')
     expect(ops.findPaymentByMemo).toHaveBeenCalledWith('org1', seen.memo, { to: acme, amount: 100000000n })
+    expect(ops.send).toHaveBeenCalledOnce()
+  })
+})
+
+describe('stuck submitting payments', () => {
+  const now = () => Math.floor(Date.now() / 1000)
+  const MEMO = memoFromInvoice('INV-1042')
+  const insertSubmitting = (db: ReturnType<typeof setup>['db'], age: number) =>
+    db.insert(payments).values({ id: 'pay1', orgId: 'org1', invoiceId: 'inv1', toAddress: acme, amountBase: '100000000', memo: MEMO, txHash: null, status: 'submitting', createdAt: now() - age }).run()
+
+  test('a submitting payment younger than 120 s is still in flight: nothing reconciled, nothing sent', async () => {
+    const { deps, ops, db } = setup()
+    insertSubmitting(db, 10)
+    expect(await payInvoice(deps as any, 'inv1')).toEqual({ status: 'failed', reason: 'in_flight' })
+    expect(ops.findPaymentByMemo).not.toHaveBeenCalled()
+    expect(ops.send).not.toHaveBeenCalled()
+  })
+  test('a submitting payment older than 120 s is treated as unknown and reconciled (found → paid), never resent', async () => {
+    const { deps, ops, db } = setup()
+    insertSubmitting(db, 121)
+    ops.findPaymentByMemo.mockResolvedValueOnce('0xbbb')
+    expect(await payInvoice(deps as any, 'inv1')).toEqual({ status: 'paid', txHash: '0xbbb' })
+    expect(ops.findPaymentByMemo).toHaveBeenCalledWith('org1', MEMO, { to: acme, amount: 100000000n })
+    expect(ops.send).not.toHaveBeenCalled()
+    expect(paymentRow(db)).toMatchObject({ status: 'confirmed', txHash: '0xbbb' })
+    expect(invoiceRow(db)?.status).toBe('paid')
+  })
+  test('a stale submitting payment that cannot be found stays unreconciled and is never resent', async () => {
+    const { deps, ops, db } = setup()
+    insertSubmitting(db, 600)
+    expect(await payInvoice(deps as any, 'inv1')).toEqual({ status: 'failed', reason: 'unreconciled' })
+    expect(await payInvoice(deps as any, 'inv1')).toEqual({ status: 'failed', reason: 'unreconciled' })
+    expect(ops.send).not.toHaveBeenCalled()
+    expect(ops.preflight).not.toHaveBeenCalled()
+  })
+  test('a stale submitting payment seen under the org lock is reconciled too, never resent', async () => {
+    const { deps, ops, db } = setup()
+    // the row appears while payInvoice verifies (after its first read, before the locked re-read)
+    ops.resolveRecipient.mockImplementationOnce(async (to: any) => {
+      insertSubmitting(db, 300)
+      return { effective: to, isVirtual: false, masterId: null, registered: true }
+    })
+    ops.findPaymentByMemo.mockResolvedValueOnce('0xbbb')
+    expect(await payInvoice(deps as any, 'inv1')).toEqual({ status: 'paid', txHash: '0xbbb' })
+    expect(ops.send).not.toHaveBeenCalled()
+    expect(ops.preflight).not.toHaveBeenCalled()
+  })
+})
+
+describe('currency guard', () => {
+  test.each(['EUR 300', 'USDT', 'EUR', ' gbp '])('an invoice in %j is failed with currency_unsupported; nothing is verified or sent', async (currency) => {
+    const { deps, ops, db } = setup()
+    db.update(invoices).set({ currency }).where(eq(invoices.id, 'inv1')).run()
+    expect(await payInvoice(deps as any, 'inv1')).toEqual({ status: 'failed', reason: 'currency_unsupported' })
+    expect(invoiceRow(db)?.status).toBe('failed')
+    expect(ops.resolveRecipient).not.toHaveBeenCalled()
+    expect(ops.preflight).not.toHaveBeenCalled()
+    expect(ops.send).not.toHaveBeenCalled()
+    const ev = db.select().from(events).where(eq(events.invoiceId, 'inv1')).all()
+    expect(ev.map((e) => e.kind)).toEqual(['currency_unsupported'])
+    expect(JSON.parse(ev[0]!.detailJson)).toMatchObject({ reason: 'currency_unsupported', currency: currency.trim() })
+  })
+  test('a missing currency fails closed', async () => {
+    const { deps, ops, db } = setup()
+    db.update(invoices).set({ currency: null }).where(eq(invoices.id, 'inv1')).run()
+    expect(await payInvoice(deps as any, 'inv1')).toEqual({ status: 'failed', reason: 'currency_unsupported' })
+    expect(ops.send).not.toHaveBeenCalled()
+  })
+  test.each(['USDC.e', 'usd', 'USDC', ' pathUSD ', 'USD'])('an invoice in %j pays', async (currency) => {
+    const { deps, ops, db } = setup()
+    db.update(invoices).set({ currency }).where(eq(invoices.id, 'inv1')).run()
+    expect((await payInvoice(deps as any, 'inv1')).status).toBe('paid')
     expect(ops.send).toHaveBeenCalledOnce()
   })
 })

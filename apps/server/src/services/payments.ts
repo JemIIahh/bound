@@ -99,6 +99,18 @@ async function reconcile(deps: ServiceDeps, row: PaymentRow, lab: boolean): Prom
   }
 }
 
+/**
+ * A 'submitting' row older than this is no longer trusted to be in flight (the process that claimed it
+ * may have crashed mid-send): it is treated as 'unknown' and reconciled, never resent.
+ */
+const SUBMITTING_STALE_SECONDS = 120
+const isStaleSubmitting = (row: Pick<PaymentRow, 'status' | 'createdAt'>) =>
+  row.status === 'submitting' && nowSeconds() - row.createdAt > SUBMITTING_STALE_SECONDS
+
+/** Bound pays in USD stablecoins only; compared trimmed, upper-cased and without dots (USDC.e → USDCE). */
+const SUPPORTED_CURRENCIES = new Set(['USD', 'USDC', 'USDCE', 'PATHUSD'])
+export const isSupportedCurrency = (c: string | null | undefined) => !!c && SUPPORTED_CURRENCIES.has(c.trim().toUpperCase().replace(/\./g, ''))
+
 /** Only a UNIQUE (or primary-key, which SQLite also reports as UNIQUE) violation means "another attempt holds the slot". */
 export const isUniqueViolation = (e: unknown) => String((e as { message?: unknown } | null)?.message ?? '').includes('UNIQUE')
 
@@ -158,8 +170,8 @@ export async function payInvoice(deps: ServiceDeps, invoiceId: string, opts: { l
   // Idempotency: an existing payment row decides before anything else.
   const existing = db.select().from(payments).where(eq(payments.invoiceId, invoiceId)).get()
   if (existing?.status === 'confirmed') return { status: 'paid', txHash: existing.txHash as Hex }
+  if (existing && (existing.status === 'unknown' || isStaleSubmitting(existing))) return reconcile(deps, existing, lab)
   if (existing?.status === 'submitting') return { status: 'failed', reason: 'in_flight' }
-  if (existing?.status === 'unknown') return reconcile(deps, existing, lab)
   // 'rejected' / 'reverted': no money moved; fall through to a fresh, fully re-verified attempt.
 
   // A human rejection of this invoice's approval is final.
@@ -170,6 +182,12 @@ export async function payInvoice(deps: ServiceDeps, invoiceId: string, opts: { l
   let amount: bigint
   try { amount = BigInt(inv.amountBase) } catch { return { status: 'failed', reason: 'incomplete_invoice' } }
   if (amount <= 0n) return { status: 'failed', reason: 'incomplete_invoice' }
+  if (!isSupportedCurrency(inv.currency)) {
+    // the agent key moves USD stablecoins: an invoice in any other currency must never be paid 1:1
+    setInvoice(db, invoiceId, { status: 'failed' })
+    logEvent(db, { orgId: org.id, kind: 'currency_unsupported', invoiceId, detail: { to: inv.address, amount: amount.toString(), currency: inv.currency?.trim() ?? null, reason: 'currency_unsupported', ...(lab ? { lab: true } : {}) } })
+    return { status: 'failed', reason: 'currency_unsupported' }
+  }
   if (!org.authorized) return { status: 'failed', reason: 'org_not_authorized' }
 
   let v: VerifyOutput
@@ -217,6 +235,7 @@ async function payLocked(
   // Re-read under the lock: another attempt for this invoice may have finished while we verified.
   const current = db.select().from(payments).where(eq(payments.invoiceId, invoiceId)).get()
   if (current?.status === 'confirmed') return { status: 'paid', txHash: current.txHash as Hex }
+  if (current && isStaleSubmitting(current)) return reconcile(deps, current, lab)
   if (current && current.status !== 'rejected' && current.status !== 'reverted') return { status: 'failed', reason: 'in_flight' }
 
   let duplicateOf: string | null
@@ -394,10 +413,12 @@ export function productionChainOps(deps: AppDeps): ChainOps {
       const head = await pub.getBlockNumber()
       const logs = await pub.getContractEvents({
         address: token, abi: Abis.tip20, eventName: 'TransferWithMemo',
-        args: { from: getAddress(org.rootAddress), memo },
+        args: { from: getAddress(org.rootAddress), to: match?.to, memo },
         fromBlock: head > MEMO_LOOKBACK ? head - MEMO_LOOKBACK : 0n, toBlock: head,
       })
-      const hit = logs.find((l: any) => !match || l.args?.amount === match.amount)
+      // the same memo + amount to a different recipient is not this payment
+      const sameTo = (l: any) => { try { return getAddress(l.args?.to) === getAddress(match!.to) } catch { return false } }
+      const hit = logs.find((l: any) => !match || (l.args?.amount === match.amount && sameTo(l)))
       return (hit?.transactionHash as Hex | undefined) ?? null
     },
 
@@ -407,7 +428,10 @@ export function productionChainOps(deps: AppDeps): ChainOps {
     },
 
     async remainingLimit(account, keyId) {
-      return (await pub.readContract({ address: KEYCHAIN, abi: Abis.accountKeychain, functionName: 'getRemainingLimit', args: [account, keyId, token] })) as bigint
+      // getRemainingLimitWithPeriod returns (remaining uint256, periodEnd uint64); the period-aware read
+      // reflects a rolled-over period, which plain getRemainingLimit may not
+      const [remaining] = (await pub.readContract({ address: KEYCHAIN, abi: Abis.accountKeychain, functionName: 'getRemainingLimitWithPeriod', args: [account, keyId, token] })) as readonly [bigint, bigint]
+      return remaining
     },
 
     async sendDemoRoot(call) {

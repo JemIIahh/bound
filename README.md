@@ -31,20 +31,20 @@ PAYEE SIDE                         BOUND (open source)                        PA
 
 **Virtual addresses (TIP-1022).** An address of the form `masterId | 0xfd×10 | userTag` forwards to a registered master wallet. A master registration is permanent, so a payee that uses one can't quietly swap wallets. Bound resolves a virtual address to its master before looking it up in the registry and blocks unregistered virtual addresses, which Tempo itself rejects.
 
-**BoundRegistry.** A small contract ([`contracts/src/BoundRegistry.sol`](contracts/src/BoundRegistry.sol)) that only Bound's attester writes and anyone can read. Each entry holds the payee's legal name, DNS-verified domain, optional LEI and virtual master, and a level (1 = domain + wallet, 2 = also an LEI entity match). A domain has one current wallet. A wallet change is a `supersede`, and the new wallet only becomes active after a **72-hour cooling-off** period. Payers who pinned the old wallet get a changed-wallet alert. Verifications can also be revoked.
+**BoundRegistry.** A small contract ([`contracts/src/BoundRegistry.sol`](contracts/src/BoundRegistry.sol)) that only Bound's attester writes and anyone can read. Each entry holds the payee's legal name, DNS-verified domain, optional LEI and virtual master, and a level (1 = domain + wallet, 2 = also an LEI entity match). A domain has one current wallet. A wallet change is a `supersede`, and the new wallet only becomes active after a **72-hour cooling-off** period. Payers who pinned the old wallet get a changed-wallet alert. Verifications can also be revoked. A legal name that another company (other wallet, other domain) already holds in the registry can only be attested again at level 2, with an LEI whose GLEIF name matches.
 
 **Verdicts** (`packages/core`):
 
 | Verdict | When | Action |
 |---|---|---|
 | `MATCH` | verified payee, name matches | PAY if the wallet is on the org's allowlist, else ASK once |
-| `CLOSE_MATCH` | verified payee but the name is only close (e.g. a different suffix), an unregistered wallet whose name resembles a verified payee, or the invoice was sent from another payee's domain | ASK |
+| `CLOSE_MATCH` | verified payee but the name is only close (e.g. a different suffix), a verified payee whose own registered domain imitates another verified company's domain, an unregistered wallet whose name resembles a verified payee, or the invoice was sent from another payee's domain | ASK |
 | `NO_MATCH` | unregistered wallet, or the name doesn't match the registered one | ASK |
 | `LOOKALIKE` | the address shares its first 4 and last 4 hex characters with a known wallet, the invoice claims a verified company but pays an unverified wallet, or an unregistered wallet is invoiced from a domain imitating a registered one | BLOCK |
 | `CHANGED` | the wallet was superseded, or is still in its cooling-off period | BLOCK |
 | `REVOKED` | the verification was revoked | BLOCK |
 
-PAY needs both a verdict and the onchain allowlist. Pins (wallets a human approved before) and the allowlist are per org, and Bound re-verifies right before every payment. It never trusts the agent's reading of the invoice.
+PAY needs both a verdict and the onchain allowlist. Pins (wallets a human approved before) and the allowlist are per org, and Bound re-verifies right before every payment. It never trusts the agent's reading of the invoice. Bound pays in USD stablecoins only: an invoice in any other currency (anything but USD, USDC, USDC.e or pathUSD) is failed as `currency_unsupported` and never paid.
 
 ## Architecture
 
@@ -113,11 +113,30 @@ pnpm --filter @bound/server testnet:lab      # the same through the server's lab
 | Demo org root (demo only) | [`0x06dc65C749734F95534BA0102aA629974e8F7943`](https://explore.testnet.tempo.xyz/address/0x06dc65C749734F95534BA0102aA629974e8F7943), agent key authorized in tx [`0x9669e15b…db7cec`](https://explore.testnet.tempo.xyz/tx/0x9669e15b22075d93883c9546b6a2924eb92a4112f57ec11f4871b2943cdb7cec) |
 | Token | pathUSD `0x20c0000000000000000000000000000000000000` |
 
-The lookalike was mined to match the full 4 + 4 characters that the core check uses (`LOOKALIKE_CHARS=4`, about 3.2 billion keys in 25 minutes), so no reduced-length fallback is in use.
+The lookalike was mined to match the full 4 + 4 characters that the core check uses (about 3.2 billion keys in 25 minutes), so no reduced-length fallback is in use. `LOOKALIKE_CHARS` in `apps/server/.env` is only the `demo:lookalike` mining script's record of how many characters it matched; it is not a product setting, and nothing in the server or `packages/core` reads it (the check is always 4 + 4).
 
 ### Tempo mainnet
 
-Not deployed yet. It's waiting on founder funds and go-ahead.
+Mainnet: deployment pending (see Testnet above).
+
+### Hosted deployment
+
+The server (`apps/server`) and the web app (`apps/web`) deploy separately, for example the server on Railway and the web app on Vercel. Besides the keys in [`.env.example`](.env.example):
+
+| Where | Variable | Value |
+|---|---|---|
+| server | `WEB_ORIGIN` | The web app's URL (e.g. the Vercel URL), used for CORS |
+| server | `LAB_ENABLED` | Leave unset or `false` on mainnet unless the attack lab should run there (see below) |
+| server | `DEMO_ORG_ID` | The only org `POST /v1/orgs/:orgId/authorize-demo` will sign for (the seeded demo org). Set it whenever `DEMO_ROOT_PRIVATE_KEY` is set |
+| server | `DEMO_ROOT_PRIVATE_KEY` | Demo only. Keep it unset on mainnet unless you are filming the demo |
+| web | `NEXT_PUBLIC_API_URL` | The server's public URL |
+| web | `NEXT_PUBLIC_TEMPO_NETWORK` | `testnet` or `mainnet`, the same as the server's `TEMPO_NETWORK`. If they differ, the web app shows a red notice and disables every signing button |
+
+### Known limitations
+
+- A BoundRegistry `supersede` to a different domain leaves the old domain mapped to the old wallet until that verification is revoked.
+- The org token is stored in the browser's `localStorage`: an organization opens in the browser that created it, and anyone with access to that browser profile holds the token.
+- Rate limits are in memory and per process: several server instances each keep their own counts.
 
 ### Guard-off proof
 

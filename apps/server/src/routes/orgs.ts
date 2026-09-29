@@ -5,6 +5,7 @@ import { requireOrg } from '../auth'
 import { confirmApproval, prepareApproval, rejectApproval } from '../services/approvals'
 import { authorizeDemo, confirmAuthorization, createOrg, getOverview } from '../services/orgs'
 import type { ServiceDeps } from '../services/payments'
+import { perIpLimit } from '../rate-limit'
 
 const ZERO = '0x0000000000000000000000000000000000000000'
 
@@ -19,8 +20,11 @@ const txBody = z.object({ txHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/, 'Inval
 export function orgsRouter(deps: ServiceDeps) {
   const r = Router()
   const auth = requireOrg(deps)
+  // public, unauthenticated creation and the server-signed demo authorization: 5 per minute per IP each
+  const createLimit = perIpLimit(5)
+  const demoLimit = perIpLimit(5)
 
-  r.post('/orgs', async (req, res) => {
+  r.post('/orgs', createLimit, async (req, res) => {
     const b = createBody.parse(req.body)
     res.status(201).json(await createOrg(deps, { ...b, rootAddress: getAddress(b.rootAddress) }))
   })
@@ -30,8 +34,9 @@ export function orgsRouter(deps: ServiceDeps) {
     res.json(await confirmAuthorization(deps, req.params.orgId, txHash as Hex))
   })
 
-  r.post('/orgs/:orgId/authorize-demo', auth, async (req, res) => {
-    res.json(await authorizeDemo(deps, req.params.orgId))
+  r.post('/orgs/:orgId/authorize-demo', auth, demoLimit, async (_req, res) => {
+    const orgId: string = res.locals.org.id // set by requireOrg
+    res.json(await authorizeDemo(deps, orgId))
   })
 
   r.get('/orgs/:orgId/overview', auth, async (req, res) => {

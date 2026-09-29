@@ -75,3 +75,41 @@ describe('production send', () => {
     await expect(send(opsWith(), true)).rejects.toBeInstanceOf(PaymentNotSent)
   })
 })
+
+describe('production findPaymentByMemo', () => {
+  const MEMO = ('0x' + 'ab'.repeat(32)) as `0x${string}`
+  const other = '0x6666666666666666666666666666666666666666'
+  const OTHER_HASH = ('0x' + 'ef'.repeat(32)) as `0x${string}`
+  const pubWith = (logs: any[], seen: any[] = []) => ({
+    getBlockNumber: async () => 100n,
+    // a node that ignores the indexed filter: the client-side check must still hold
+    getContractEvents: async (q: any) => { seen.push(q); return logs },
+  })
+  test('filters the indexed logs by the effective recipient', async () => {
+    const seen: any[] = []
+    await opsWith(pubWith([], seen)).findPaymentByMemo('o', MEMO, { to, amount: 7n })
+    expect(seen[0].args).toMatchObject({ memo: MEMO, to })
+  })
+  test('a log with the right memo and amount but a different recipient is not matched', async () => {
+    const ops = opsWith(pubWith([{ args: { from: root, to: other, amount: 7n, memo: MEMO }, transactionHash: OTHER_HASH }]))
+    expect(await ops.findPaymentByMemo('o', MEMO, { to, amount: 7n })).toBeNull()
+  })
+  test('a log with the right memo, amount and recipient is matched', async () => {
+    const ops = opsWith(pubWith([
+      { args: { from: root, to: other, amount: 7n, memo: MEMO }, transactionHash: OTHER_HASH },
+      { args: { from: root, to: to.toLowerCase(), amount: 7n, memo: MEMO }, transactionHash: HASH },
+    ]))
+    expect(await ops.findPaymentByMemo('o', MEMO, { to, amount: 7n })).toBe(HASH)
+  })
+})
+
+describe('production remainingLimit', () => {
+  test('reads getRemainingLimitWithPeriod and returns the remaining amount (first tuple element)', async () => {
+    const keyId = ('0x' + '44'.repeat(20)) as `0x${string}`
+    const calls: any[] = []
+    const ops = opsWith({ readContract: async (q: any) => { calls.push(q); return [5_000_000n, 1_900_000_000n] } })
+    expect(await ops.remainingLimit(root, keyId)).toBe(5_000_000n)
+    expect(calls[0].functionName).toBe('getRemainingLimitWithPeriod')
+    expect(calls[0].args).toEqual([root, keyId, '0x20c0000000000000000000000000000000000000'])
+  })
+})

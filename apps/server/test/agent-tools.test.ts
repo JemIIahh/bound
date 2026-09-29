@@ -112,15 +112,9 @@ describe('rawTransfer (lab guard-off)', () => {
     expect(ops.send).not.toHaveBeenCalled()
     expect(payment(db)).toBeUndefined()
   })
-  test('a spending-limit refusal is force-sent only when the amount exceeds the FULL per-period limit', async () => {
-    const { db } = lab() // org limitBase = 1 base unit, amount 10 USD: no refill can ever cover it
-    const ops = { preflight: refused('SpendingLimitExceeded'), send: vi.fn(async () => ({ txHash: '0xrej', status: 'reverted' })) }
-    const r = await rawTransfer({ db, ops } as any, 'inv1', { to: attacker, amount: '10', memo: 'INV-EVIL' })
-    expect(r).toMatchObject({ chain: 'rejected', code: 'SpendingLimitExceeded' })
-    expect(ops.send).toHaveBeenCalledOnce()
-  })
-  test('a spending-limit refusal within the per-period limit is never sent (a period refill could let it through)', async () => {
-    for (const limitBase of ['100000000', '10000000']) { // limit 100 USD, and limit == amount (10 USD)
+  test('a spending-limit refusal is never sent, whatever the amount (only CallNotAllowed is force-sent)', async () => {
+    // limit 1 base unit (amount far above it), limit 100 USD, and limit == amount (10 USD)
+    for (const limitBase of ['1', '100000000', '10000000']) {
       const { db } = lab()
       db.update(orgs).set({ limitBase }).where(eq(orgs.id, 'org1')).run()
       const ops = { preflight: refused('SpendingLimitExceeded'), send: vi.fn() }

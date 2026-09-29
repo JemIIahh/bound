@@ -5,7 +5,7 @@ import { api, errorMessage, type InvoiceDetail, type OrgEvent, type OrgInvoice, 
 import { txUrl } from '@/lib/chain'
 import { ago, usd } from '@/lib/format'
 import { AgentLog } from './AgentLog'
-import { BLOCK_REASONS, StatusBadge, invoiceStatus, isOpenStatus } from './InvoiceStatus'
+import { BLOCK_REASONS, FAIL_REASONS, StatusBadge, invoiceStatus, isOpenStatus } from './InvoiceStatus'
 import { VERDICTS, VerdictBadge } from './VerdictCard'
 import { card, errorText, fieldClass, hint, primaryBtn, sectionLabel, short, smallBtn } from './ui'
 
@@ -148,6 +148,10 @@ function outcome(inv: OrgInvoice, events: OrgEvent[], payment: Payment | undefin
     if (reason && BLOCK_REASONS[reason]) return { text: `${BLOCK_REASONS[reason]}.` }
     if (inv.verdict) return { text: VERDICTS[inv.verdict.verdict]?.summary }
     return { text: reason }
+  }
+  if (inv.status === 'failed') {
+    const reason = own.map((e) => e.detail?.reason).find((r): r is string => typeof r === 'string' && r in FAIL_REASONS)
+    if (reason) return { text: `${FAIL_REASONS[reason]}.` }
   }
   if (inv.status === 'paid') return { text: payment?.txHash ? 'Paid on Tempo.' : undefined, tx: payment?.txHash }
   if (inv.status === 'unconfirmed') return { text: invoiceStatus(inv.status).note, tx: payment?.txHash }

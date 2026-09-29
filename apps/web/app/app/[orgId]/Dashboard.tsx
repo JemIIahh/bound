@@ -8,6 +8,7 @@ import { ApprovalCard } from '@/components/ApprovalCard'
 import { Counters } from '@/components/Counters'
 import { EventFeed } from '@/components/EventFeed'
 import { InvoiceInbox } from '@/components/InvoiceInbox'
+import { NetworkNotice } from '@/components/NetworkNotice'
 import { card, sectionLabel, smallBtn } from '@/components/ui'
 import { KeyNotice, OrgGate, OrgHeader } from './OrgChrome'
 
@@ -18,7 +19,7 @@ const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
 
 export function Dashboard({ orgId }: { orgId: string }) {
   const state = useOverview(orgId)
-  const { data: o, error, refresh } = state
+  const { data: o, error, refresh, network } = state
   const [kept, setKept] = useState<Set<string>>(new Set())
 
   const keep = useCallback((id: string) => setKept((s) => new Set(s).add(id)), [])
@@ -50,6 +51,7 @@ export function Dashboard({ orgId }: { orgId: string }) {
           </Link>
         }
       />
+      <NetworkNotice check={network} />
       {error && <p className="font-mono text-[11px] text-graphite">Couldn&apos;t refresh: {error} Retrying.</p>}
       <KeyNotice o={o} />
       <Counters counters={o.counters} />
@@ -64,6 +66,7 @@ export function Dashboard({ orgId }: { orgId: string }) {
               invoice={o.invoices.find((i) => i.id === a.invoiceId)}
               rootAddress={o.org.rootAddress}
               labelFor={labelFor}
+              signBlocked={network.mismatch}
               onChange={() => {
                 keep(a.id)
                 void refresh()

@@ -97,6 +97,18 @@ export function evaluate(i: VerifyInput): VerifyResult {
     if (name.result === 'MATCH') candidates.push('MATCH')
     if (name.result === 'CLOSE_MATCH') { reasons.push({ code: 'name_close', detail: `Registered name is "${p.legalName}"` }); candidates.push('CLOSE_MATCH') }
     if (name.result === 'NO_MATCH') { reasons.push({ code: 'name_mismatch', detail: `Registered name is "${p.legalName}"` }); candidates.push('NO_MATCH') }
+
+    // The payee's own registered domain imitates another verified company's domain (acme-ltd.co vs acme.com):
+    // a verified record is not enough to pay without a human look.
+    const ownDomain = normalizeDomain(p.domain)
+    const others = i.registeredDomains
+      .filter((d) => getAddress(d.wallet) !== getAddress(p.wallet))
+      .map((d) => ({ ...d, domain: normalizeDomain(d.domain) }))
+    const imitatedDomain = findLookalikeDomain(ownDomain, others)
+    if (imitatedDomain) {
+      reasons.push({ code: 'lookalike_domain', detail: `${p.domain} imitates ${imitatedDomain.domain} (${imitatedDomain.label})` })
+      candidates.push('CLOSE_MATCH')
+    }
   }
 
   // 4. Sender domain.
