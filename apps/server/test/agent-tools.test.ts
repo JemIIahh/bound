@@ -35,6 +35,19 @@ describe('recordInvoiceFields', () => {
     expect((await recordInvoiceFields({ db } as any, 'inv1', { payeeName: 'A', address: root, amount: 'lots', currency: 'USDC', invoiceNo: '1' })).ok).toBe(false)
     expect((await recordInvoiceFields({ db } as any, 'inv1', { payeeName: 'A', address: root, amount: '0', currency: 'USDC', invoiceNo: '1' })).ok).toBe(false)
   })
+  test.each(['300 EUR', '€300', '£1,250.50', '₦5000', '300 GBP', 'NGN 300'])('an amount carrying a non-USD currency (%s) is rejected and never recorded', async (amount) => {
+    const { db } = setup()
+    const r = await recordInvoiceFields({ db } as any, 'inv1', { payeeName: 'Acme Ltd', address: acme, amount, currency: 'USDC', invoiceNo: 'INV-1' })
+    expect(r).toEqual({ ok: false, error: 'Amount is not in USD stablecoins' })
+    expect(invoice(db).amountBase).toBeNull()
+    expect(invoice(db).status).toBe('new')
+  })
+  test.each([['$1,250.50', '1250500000'], ['300 USDC', '300000000'], ['300 usd', '300000000'], ['1250.5', '1250500000']])('a USD-equivalent amount (%s) is recorded', async (amount, base) => {
+    const { db } = setup()
+    const r = await recordInvoiceFields({ db } as any, 'inv1', { payeeName: 'Acme Ltd', address: acme, amount, currency: 'USDC', invoiceNo: 'INV-1' })
+    expect(r).toEqual({ ok: true, amountBase: base })
+    expect(invoice(db).amountBase).toBe(base)
+  })
   test('cannot rewrite an invoice once it has been decided or paid', async () => {
     const { db } = setup()
     const f = { payeeName: 'Acme Ltd', address: acme, amount: '10', currency: 'USDC', invoiceNo: 'INV-1' }
