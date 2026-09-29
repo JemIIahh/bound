@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS payee_verifications (id TEXT PRIMARY KEY, wallet TEXT
 CREATE TABLE IF NOT EXISTS orgs (id TEXT PRIMARY KEY, name TEXT NOT NULL, root_address TEXT NOT NULL, agent_key_address TEXT NOT NULL, agent_key_enc TEXT NOT NULL, token_hash TEXT NOT NULL, limit_base TEXT NOT NULL, period_seconds INTEGER NOT NULL, authorize_tx TEXT, authorized INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS pins (org_id TEXT NOT NULL, wallet TEXT NOT NULL, label TEXT NOT NULL, approved_at INTEGER NOT NULL, tx_hash TEXT, active INTEGER NOT NULL DEFAULT 1, PRIMARY KEY (org_id, wallet));
 CREATE TABLE IF NOT EXISTS invoices (id TEXT PRIMARY KEY, org_id TEXT NOT NULL, raw TEXT NOT NULL, payee_name TEXT, address TEXT, amount_base TEXT, currency TEXT, invoice_no TEXT, sender_domain TEXT, due_date TEXT, verdict_json TEXT, action TEXT, status TEXT NOT NULL DEFAULT 'new', agent_log TEXT, lab INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS approvals (id TEXT PRIMARY KEY, org_id TEXT NOT NULL, invoice_id TEXT NOT NULL, wallet TEXT NOT NULL, label TEXT NOT NULL, verdict_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', tx_hash TEXT, created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS approvals (id TEXT PRIMARY KEY, org_id TEXT NOT NULL, invoice_id TEXT NOT NULL, wallet TEXT NOT NULL, label TEXT NOT NULL, verdict_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', tx_hash TEXT, created_at INTEGER NOT NULL, prepared_at INTEGER);
 CREATE TABLE IF NOT EXISTS payments (id TEXT PRIMARY KEY, org_id TEXT NOT NULL, invoice_id TEXT NOT NULL, to_address TEXT NOT NULL, amount_base TEXT NOT NULL, memo TEXT NOT NULL, tx_hash TEXT, status TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS payments_invoice_unique ON payments (invoice_id);
 CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, org_id TEXT, kind TEXT NOT NULL, invoice_id TEXT, detail_json TEXT NOT NULL DEFAULT '{}', tx_hash TEXT, created_at INTEGER NOT NULL);
@@ -24,5 +24,9 @@ CREATE TABLE IF NOT EXISTS indexer_state (id TEXT PRIMARY KEY, last_block INTEGE
 `
 
 export function migrate(db: Db) {
-  ;(db as any).$client.exec(DDL)
+  const sqlite = (db as any).$client as Database.Database
+  sqlite.exec(DDL)
+  // columns added after a table was first created (CREATE TABLE IF NOT EXISTS does not add them)
+  const approvalCols = sqlite.prepare('PRAGMA table_info(approvals)').all() as { name: string }[]
+  if (!approvalCols.some((c) => c.name === 'prepared_at')) sqlite.exec('ALTER TABLE approvals ADD COLUMN prepared_at INTEGER')
 }

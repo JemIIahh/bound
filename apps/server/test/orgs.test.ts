@@ -150,7 +150,7 @@ describe('authorization', () => {
     const other = (await create(app)).body
     expect((await request(app).post(`/v1/orgs/${other.org.id}/authorize-demo`).set('authorization', `Bearer ${other.token}`)).status).toBe(403)
     expect(ops.sendDemoRoot).not.toHaveBeenCalled()
-    const mine = (await create(app, demoRoot)).body
+    const mine = (await request(app).post('/v1/orgs').send({ name: 'Demo', rootAddress: demoRoot, limitUsd: '50', periodSeconds: 604800 })).body
     const res = await request(app).post(`/v1/orgs/${mine.org.id}/authorize-demo`).set('authorization', `Bearer ${mine.token}`)
     expect(res.status).toBe(200)
     expect(res.body).toEqual({ authorized: true })
@@ -158,6 +158,20 @@ describe('authorization', () => {
     const d = decodeFunctionData({ abi: Abis.accountKeychain, data: call.data })
     expect(d.functionName).toBe('authorizeKey')
     expect((d.args as any)[2].allowedCalls[0].selectorRules[0].recipients).toEqual([demoRoot])
+  })
+  test('demo-root orgs are capped at 50 USD: creation above is 400, authorize-demo above is refused', async () => {
+    const demoKey = generatePrivateKey()
+    const demoRoot = privateKeyToAddress(demoKey)
+    const { app, db, ops } = setup({ demoRootKey: demoKey })
+    const big = await request(app).post('/v1/orgs').send({ name: 'Demo', rootAddress: demoRoot, limitUsd: '50.01', periodSeconds: 604800 })
+    expect(big.status).toBe(400)
+    const ok = (await request(app).post('/v1/orgs').send({ name: 'Demo', rootAddress: demoRoot, limitUsd: '50', periodSeconds: 604800 })).body
+    // an over-limit demo-root org that predates the cap (or was edited) must not be signed server-side
+    db.update(orgs).set({ limitBase: '50000001' }).where(eq(orgs.id, ok.org.id)).run()
+    expect((await request(app).post(`/v1/orgs/${ok.org.id}/authorize-demo`).set('authorization', `Bearer ${ok.token}`)).status).toBe(403)
+    expect(ops.sendDemoRoot).not.toHaveBeenCalled()
+    // non-demo roots are not capped
+    expect((await create(app)).status).toBe(201)
   })
   test('authorize-demo is 404 when no demo key is configured', async () => {
     const { app } = setup()
