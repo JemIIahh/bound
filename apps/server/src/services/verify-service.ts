@@ -1,6 +1,6 @@
 import { getAddress, type Address, type Hex } from 'viem'
 import { and, eq } from 'drizzle-orm'
-import { AllowlistError, decideAction, evaluate, type Action, type KnownWallet, type OnchainPayee, type VerifyResult } from '@bound/core'
+import { AllowlistError, decideAction, evaluate, normalizeDomain, type Action, type KnownWallet, type OnchainPayee, type VerifyResult } from '@bound/core'
 import { HttpError } from '../app'
 import { newId } from '../crypto'
 import { orgs, payees, pins } from '../db/schema'
@@ -68,7 +68,15 @@ export async function verifyPayee(
     ...active.map((p) => ({ wallet: getAddress(p.wallet), label: p.legalName, source: 'registry' as const })),
     ...orgPins.map((p) => ({ wallet: getAddress(p.wallet), label: p.label, source: 'pin' as const })),
   ]
-  const registeredDomains = active.map((p) => ({ domain: p.domain, label: p.legalName, wallet: getAddress(p.wallet) }))
+  // A domain's age is its earliest registration, superseded records included: a wallet rotation must not
+  // make the incumbent look newer than a lookalike registered in between. Revoked records never count.
+  const since = new Map<string, number>()
+  for (const p of mirror) {
+    if (p.revokedAt) continue
+    const d = normalizeDomain(p.domain)
+    since.set(d, Math.min(since.get(d) ?? Infinity, p.activeFrom))
+  }
+  const registeredDomains = active.map((p) => ({ domain: p.domain, label: p.legalName, wallet: getAddress(p.wallet), since: since.get(normalizeDomain(p.domain)) }))
   const pinned = orgPins.some((p) => same(p.wallet, address))
 
   let allowlisted = false

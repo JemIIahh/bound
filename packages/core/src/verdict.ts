@@ -13,7 +13,8 @@ export type VerifyInput = {
   resolved: { effective: Address; isVirtual: boolean; masterId: Hex | null; registered: boolean }
   payee: OnchainPayee | null
   knownWallets: KnownWallet[]
-  registeredDomains: { domain: string; label: string; wallet: Address }[]
+  /** `since`: unix seconds the domain was first registered (earliest activeFrom of any non-revoked record for it). */
+  registeredDomains: { domain: string; label: string; wallet: Address; since?: number }[]
   pinned: boolean; allowlisted: boolean
 }
 export type VerifyResult = {
@@ -99,10 +100,14 @@ export function evaluate(i: VerifyInput): VerifyResult {
     if (name.result === 'NO_MATCH') { reasons.push({ code: 'name_mismatch', detail: `Registered name is "${p.legalName}"` }); candidates.push('NO_MATCH') }
 
     // The payee's own registered domain imitates another verified company's domain (acme-ltd.co vs acme.com):
-    // a verified record is not enough to pay without a human look.
+    // a verified record is not enough to pay without a human look. Only an OLDER (or same-age) registration
+    // can be imitated, so the newer of two lookalikes is flagged and the incumbent is not; a registration of
+    // unknown age is always considered.
     const ownDomain = normalizeDomain(p.domain)
+    const ownSince = i.registeredDomains.find((d) => getAddress(d.wallet) === getAddress(p.wallet))?.since ?? p.activeFrom
     const others = i.registeredDomains
       .filter((d) => getAddress(d.wallet) !== getAddress(p.wallet))
+      .filter((d) => d.since === undefined || d.since <= ownSince)
       .map((d) => ({ ...d, domain: normalizeDomain(d.domain) }))
     const imitatedDomain = findLookalikeDomain(ownDomain, others)
     if (imitatedDomain) {

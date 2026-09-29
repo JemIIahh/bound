@@ -79,3 +79,27 @@ test('a pin from another org does not count', async () => {
   const r = await verifyPayee({ db, chain: {} as any, config: {} as any, ops } as any, { address: acme as any, payeeName: 'Acme Ltd', orgId: 'org1' })
   expect(r.pinned).toBe(false)
 })
+
+test('a superseded incumbent keeps its domain age: after a wallet rotation only the newer lookalike is flagged', async () => {
+  const db = createDb(':memory:'); migrate(db)
+  const acmeOld = '0x1111111111111111111111111111111111111111'
+  const acmeNew = '0x2222222222222222222222222222222222222222'
+  const acne = '0x5555555555555555555555555555555555555555'
+  const row = { lei: '', masterId: '0x00000000', level: 1, evidenceHash: '0x00', updatedBlock: 1 }
+  // acme.com registered at t=100, acne.com at t=1000, then Acme rotated to a new wallet at t=5000
+  db.insert(payees).values({ ...row, wallet: acmeOld, legalName: 'Acme Ltd', domain: 'acme.com', activeFrom: 100, supersededAt: 5000, successor: acmeNew }).run()
+  db.insert(payees).values({ ...row, wallet: acne, legalName: 'Acne Inc', domain: 'acne.com', activeFrom: 1000 }).run()
+  db.insert(payees).values({ ...row, wallet: acmeNew, legalName: 'Acme Ltd', domain: 'acme.com', activeFrom: 5000 }).run()
+  // a revoked registration never counts towards a domain's age
+  db.insert(payees).values({ ...row, wallet: '0x6666666666666666666666666666666666666666', legalName: 'Acne Inc', domain: 'acne.com', activeFrom: 1, revokedAt: 50 }).run()
+  const ops = { resolveRecipient: vi.fn(async (to: any) => ({ effective: to, isVirtual: false, masterId: null, registered: true })), readPayee: vi.fn(async () => null) }
+  const deps = { db, chain: {} as any, config: {} as any, ops } as any
+
+  const incumbent = await verifyPayee(deps, { address: acmeNew as any, payeeName: 'Acme Ltd' })
+  expect(incumbent.verdict).toBe('MATCH')
+  expect(incumbent.reasons.map((x) => x.code)).not.toContain('lookalike_domain')
+
+  const newcomer = await verifyPayee(deps, { address: acne as any, payeeName: 'Acne Inc' })
+  expect(newcomer.verdict).toBe('CLOSE_MATCH')
+  expect(newcomer.reasons.filter((x) => x.code === 'lookalike_domain').map((x) => x.detail)).toEqual(['acne.com imitates acme.com (Acme Ltd)'])
+})
