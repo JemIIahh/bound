@@ -99,6 +99,14 @@ async function reconcile(deps: ServiceDeps, row: PaymentRow, lab: boolean): Prom
   }
 }
 
+/**
+ * A 'submitting' row older than this is no longer trusted to be in flight (the process that claimed it
+ * may have crashed mid-send): it is treated as 'unknown' and reconciled, never resent.
+ */
+const SUBMITTING_STALE_SECONDS = 120
+const isStaleSubmitting = (row: Pick<PaymentRow, 'status' | 'createdAt'>) =>
+  row.status === 'submitting' && nowSeconds() - row.createdAt > SUBMITTING_STALE_SECONDS
+
 /** Only a UNIQUE (or primary-key, which SQLite also reports as UNIQUE) violation means "another attempt holds the slot". */
 export const isUniqueViolation = (e: unknown) => String((e as { message?: unknown } | null)?.message ?? '').includes('UNIQUE')
 
@@ -158,8 +166,8 @@ export async function payInvoice(deps: ServiceDeps, invoiceId: string, opts: { l
   // Idempotency: an existing payment row decides before anything else.
   const existing = db.select().from(payments).where(eq(payments.invoiceId, invoiceId)).get()
   if (existing?.status === 'confirmed') return { status: 'paid', txHash: existing.txHash as Hex }
+  if (existing && (existing.status === 'unknown' || isStaleSubmitting(existing))) return reconcile(deps, existing, lab)
   if (existing?.status === 'submitting') return { status: 'failed', reason: 'in_flight' }
-  if (existing?.status === 'unknown') return reconcile(deps, existing, lab)
   // 'rejected' / 'reverted': no money moved; fall through to a fresh, fully re-verified attempt.
 
   // A human rejection of this invoice's approval is final.
@@ -217,6 +225,7 @@ async function payLocked(
   // Re-read under the lock: another attempt for this invoice may have finished while we verified.
   const current = db.select().from(payments).where(eq(payments.invoiceId, invoiceId)).get()
   if (current?.status === 'confirmed') return { status: 'paid', txHash: current.txHash as Hex }
+  if (current && isStaleSubmitting(current)) return reconcile(deps, current, lab)
   if (current && current.status !== 'rejected' && current.status !== 'reverted') return { status: 'failed', reason: 'in_flight' }
 
   let duplicateOf: string | null
