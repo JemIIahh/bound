@@ -465,3 +465,54 @@ describe('productionPayeeServices.writeAttestation (BoundRegistry guards)', () =
     await expect(h.services.writeAttestation(h.row, 1)).rejects.toThrow(/reverted/)
   })
 })
+
+describe('registry name-squatting guard on /attest', () => {
+  const realAcme = '0xCcB7f43C7D6DBbC4e545d8C01761098da5332ED2'
+  const squatter = '0x' + '77'.repeat(20)
+  const registryRow = (over: Partial<typeof payees.$inferInsert> = {}) =>
+    ({ wallet: realAcme, legalName: 'Acme Ltd', domain: 'acme.com', lei: '', masterId: '0x00000000', level: 1, activeFrom: 1, evidenceHash: '0x00', updatedBlock: 1, ...over })
+  /** A signed + DNS-proven verification row, inserted directly, with its DNS proof still published. */
+  function ready(over: Partial<typeof payeeVerifications.$inferInsert> = {}) {
+    const { app, db, services } = setup()
+    const row = { id: 'pv_x', wallet: squatter, legalName: 'Acme Ltd', domain: 'acme-ltd.co', nonce: 'nonce1', sigVerified: 1, dnsVerified: 1, createdAt: 1, ...over }
+    db.insert(payeeVerifications).values(row).run()
+    services.resolveTxt.mockResolvedValue(['bound-verify=nonce1'])
+    return { app, db, services, attest: () => request(app).post('/v1/payee-verifications/pv_x/attest') }
+  }
+
+  test('a level-1 attest of a name another company already verified (other wallet, other domain) is 409', async () => {
+    const { db, services, attest } = ready()
+    db.insert(payees).values(registryRow()).run()
+    const r = await attest()
+    expect(r.status).toBe(409)
+    expect(r.body.error).toBe('This legal name is already verified by another company; LEI verification required')
+    expect(services.writeAttestation).not.toHaveBeenCalled()
+  })
+  test('the same name in another form (ACME LIMITED) is also refused', async () => {
+    const { db, services, attest } = ready({ legalName: 'ACME LIMITED' })
+    db.insert(payees).values(registryRow()).run()
+    expect((await attest()).status).toBe(409)
+    expect(services.writeAttestation).not.toHaveBeenCalled()
+  })
+  test('an LEI-verified (level 2) attest of the same name is allowed', async () => {
+    const { db, services, attest } = ready({ lei: '5493001KJTIIGC8Y1R12', leiVerified: 1 })
+    db.insert(payees).values(registryRow()).run()
+    const r = await attest()
+    expect(r.status).toBe(200)
+    expect(r.body.level).toBe(2)
+    expect(services.writeAttestation).toHaveBeenCalledOnce()
+  })
+  test('superseded or revoked holders of the name, the same domain (supersede) and the same wallet do not block', async () => {
+    for (const over of [{ supersededAt: 5 }, { revokedAt: 5 }, { domain: 'acme-ltd.co' }, { wallet: squatter }]) {
+      const { db, services, attest } = ready()
+      db.insert(payees).values(registryRow(over)).run()
+      expect((await attest()).status).toBe(200)
+      expect(services.writeAttestation).toHaveBeenCalledOnce()
+    }
+  })
+  test('an unrelated name is not blocked', async () => {
+    const { db, attest } = ready({ legalName: 'Globex Corp', domain: 'globex.io' })
+    db.insert(payees).values(registryRow()).run()
+    expect((await attest()).status).toBe(200)
+  })
+})

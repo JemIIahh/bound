@@ -140,13 +140,14 @@ describe('evaluate', () => {
     expect(r.verdict).toBe('MATCH')
     expect(r.reasons.map((x) => x.code)).not.toContain('domain_mismatch')
   })
-  test('exact domain with a similar registered domain gives no lookalike_domain', () => {
+  test('exact own-domain sender adds no sender lookalike_domain (the payee-domain check still sees the similar registration)', () => {
     const r = evaluate(input({
       senderDomain: 'acme.com',
       registeredDomains: [{ domain: 'acme.com', label: 'Acme Ltd', wallet: acmeWallet }, { domain: 'acne.com', label: 'Acne Inc', wallet: other }],
     }))
-    expect(r.verdict).toBe('MATCH')
-    expect(r.reasons.map((x) => x.code)).not.toContain('lookalike_domain')
+    // only the payee's registered domain vs acne.com; nothing from the sender domain
+    expect(r.reasons.filter((x) => x.code === 'lookalike_domain').map((x) => x.detail)).toEqual(['acme.com imitates acne.com (Acne Inc)'])
+    expect(r.verdict).toBe('CLOSE_MATCH')
   })
   test('lookalike of a different company domain downgrades MATCH to CLOSE_MATCH', () => {
     const r = evaluate(input({
@@ -250,6 +251,27 @@ describe('evaluate', () => {
       ],
     }))
     expect(r.reasons.find((x) => x.code === 'domain_of_other_payee')?.detail).toContain('Acme Ltd')
+    // no fuzzy SENDER-domain lookalike (acme.com vs acmi.com); the payee's own acne.com is checked separately
+    const lookalikes = r.reasons.filter((x) => x.code === 'lookalike_domain').map((x) => x.detail)
+    expect(lookalikes.every((d) => d.startsWith('acne.com imitates'))).toBe(true)
+  })
+  test('a registered payee whose own domain imitates another company\'s domain is CLOSE_MATCH, not MATCH', () => {
+    // a squatter verified "Acme Ltd" at acme-ltd.co while the real Acme holds acme.com with another wallet
+    const squat = ('0x' + 'ee'.repeat(20)) as `0x${string}`
+    const r = evaluate(input({
+      address: squat, resolved: { effective: squat, isVirtual: false, masterId: null, registered: true },
+      payeeName: 'Acme Ltd',
+      payee: { ...acme, wallet: squat, legalName: 'Acme Ltd', domain: 'acme-ltd.co' },
+      knownWallets: [{ wallet: acmeWallet, label: 'Acme Ltd', source: 'registry' }, { wallet: squat, label: 'Acme Ltd', source: 'registry' }],
+      registeredDomains: [{ domain: 'acme.com', label: 'Acme Ltd', wallet: acmeWallet }, { domain: 'acme-ltd.co', label: 'Acme Ltd', wallet: squat }],
+    }))
+    expect(r.verdict).toBe('CLOSE_MATCH')
+    expect(r.reasons.find((x) => x.code === 'lookalike_domain')?.detail).toBe('acme-ltd.co imitates acme.com (Acme Ltd)')
+    expect(decideAction(r)).toBe('ASK')
+  })
+  test('the payee-domain check ignores the payee\'s own registration', () => {
+    const r = evaluate(input({ registeredDomains: [{ domain: 'acme.com', label: 'Acme Ltd', wallet: acmeWallet }, { domain: 'acme.co.uk', label: 'Acme Ltd', wallet: acmeWallet }] }))
+    expect(r.verdict).toBe('MATCH')
     expect(codes(r)).not.toContain('lookalike_domain')
   })
 })

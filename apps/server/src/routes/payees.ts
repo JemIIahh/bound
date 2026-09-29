@@ -6,7 +6,7 @@ import { compareNames, normalizeDomain, normalizeName } from '@bound/core'
 import { HttpError, type AppDeps } from '../app'
 import { newId, newToken } from '../crypto'
 import { payees, payeeVerifications } from '../db/schema'
-import { productionPayeeServices, type PayeeServices, type PayeeVerificationRow } from '../services/payee-verification'
+import { productionPayeeServices, registeredNameHolder, type PayeeServices, type PayeeVerificationRow } from '../services/payee-verification'
 import { processMiningQueue, type SerialJobQueue } from '../services/mining-queue'
 
 const DOMAIN_RE = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/
@@ -188,6 +188,10 @@ export function payeesRouter(
   r.post('/payee-verifications/:id/attest', async (req, res) => {
     const row = loadOpen(req.params.id)
     if (!row.sigVerified || !row.dnsVerified) throw new HttpError(409, 'Signature and DNS proof required')
+    // Wallet + DNS proofs do not stop a second company from claiming a name already in the registry.
+    if (!row.leiVerified && registeredNameHolder(db, row)) {
+      throw new HttpError(409, 'This legal name is already verified by another company; LEI verification required')
+    }
     if (attesting.has(row.id)) throw new HttpError(409, 'Attestation already in progress')
     attesting.add(row.id)
     try {
