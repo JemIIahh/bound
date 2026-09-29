@@ -1,17 +1,25 @@
 import type { Metadata } from 'next'
-import { JetBrains_Mono, Schibsted_Grotesk } from 'next/font/google'
+import Link from 'next/link'
+import { Archivo, JetBrains_Mono } from 'next/font/google'
 import { Providers } from './providers'
 import { Nav } from '@/components/Nav'
-import { chain } from '@/lib/chain'
+import { Logo } from '@/components/atoms'
+import { wrap } from '@/components/ui'
 import './globals.css'
 
-const sans = Schibsted_Grotesk({ variable: '--font-schibsted', subsets: ['latin'] })
+const sans = Archivo({ variable: '--font-archivo', subsets: ['latin'], axes: ['wdth'] })
 const mono = JetBrains_Mono({ variable: '--font-jetbrains', subsets: ['latin'] })
 
 export const metadata: Metadata = {
   title: { default: 'Bound', template: '%s · Bound' },
   description: "Your AI can't pay a stranger. Payee verification for stablecoin payments on Tempo.",
 }
+
+const FOOT_LINKS = [
+  { href: '/app', label: 'For payers' },
+  { href: '/payee', label: 'For suppliers' },
+  { href: '/verify', label: 'Check a wallet' },
+]
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
@@ -21,11 +29,19 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <div className="flex min-h-screen flex-col">
             <Nav />
             <div className="flex flex-1 flex-col">{children}</div>
-            <footer className="mx-auto w-full max-w-6xl px-5 sm:px-8">
-              <div className="h-px bg-black/12" />
-              <div className="flex flex-col items-start justify-between gap-2 py-5 font-mono text-[11px] text-graphite sm:flex-row sm:items-center">
-                <span>Payee verification for stablecoin payments · {chain.name}</span>
-                <span>Bound ©2026</span>
+            <footer className={wrap}>
+              <div className="flex flex-col items-start gap-4 py-10 text-[15px] text-fg2 sm:flex-row sm:items-center sm:justify-between sm:gap-6 sm:py-12">
+                <Link href="/" aria-label="Bound home">
+                  <Logo small />
+                </Link>
+                <nav aria-label="Footer" className="flex flex-wrap gap-x-8 gap-y-3">
+                  {FOOT_LINKS.map((l) => (
+                    <Link key={l.href} href={l.href} className="transition hover:text-fg">
+                      {l.label}
+                    </Link>
+                  ))}
+                </nav>
+                <small className="text-sm text-fg3">© 2026 Bound. Built on Tempo.</small>
               </div>
             </footer>
           </div>

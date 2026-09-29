@@ -1,31 +1,79 @@
 @import "tailwindcss";
 
-/* Design tokens: light, monochrome. Verdict colours are the only accents (see components/ui.ts). */
+/*
+ * Design tokens (Direction C): near-black surfaces, one safety-orange accent, green for paid/match.
+ * Components use the semantic names below; `.inv` (the one light card that needs action) redefines
+ * them, so the same markup reads correctly on cream.
+ */
 @theme {
-  --font-sans: var(--font-schibsted), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-schibsted), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, monospace;
 
-  --color-paper: #ececea;
-  --color-ink: #0d0d0d;
-  --color-graphite: #666663;
-  --color-mist: #b9b9b4;
+  --color-bg: #0a0b0d;
+  --color-card: #141619;
+  --color-raised: #1b1e22;
+  --color-field: #0e1012;
+  --color-line: #23262c;
+  --color-line2: #1d2025;
+  --color-edge: #33373f;
+  --color-fg: #f2f0ea;
+  --color-fg2: #a4a8b1;
+  --color-fg3: #71767f;
+  --color-acc: #ff5b1f;
+  --color-acc2: #ff7a45;
+  --color-ok: #6fe3a5;
+  --color-amber: #e7b85c;
+  --color-cream: #f2eee6;
+  --color-ink: #121316;
+  --color-ink2: #5b5850;
+  --color-btn: #ff5b1f;
+  --color-btn-fg: #140700;
+
+  --radius-card: 28px;
+  --radius-btn: 14px;
+
+  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 24px 48px -32px rgba(0, 0, 0, 0.9);
+  --shadow-inv: 0 30px 60px -30px rgba(255, 91, 31, 0.28);
+  --shadow-glow: 0 12px 32px -12px rgba(255, 91, 31, 0.6);
+}
+
+/* The inverted (cream) card: same semantic names, light values. */
+.inv {
+  --color-card: #f2eee6;
+  --color-raised: rgba(18, 19, 22, 0.06);
+  --color-field: #faf8f4;
+  --color-line: rgba(18, 19, 22, 0.14);
+  --color-line2: rgba(18, 19, 22, 0.1);
+  --color-edge: rgba(18, 19, 22, 0.22);
+  --color-fg: #121316;
+  --color-fg2: #5b5850;
+  --color-fg3: #7a766d;
+  --color-acc2: #b7410e;
+  --color-ok: #17693f;
+  --color-amber: #9a6a0e;
+  --color-btn: #121316;
+  --color-btn-fg: #f2eee6;
+  color: var(--color-fg);
 }
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 html,
 body {
   min-height: 100%;
+  overflow-x: clip;
 }
 
 body {
   margin: 0;
-  background-color: var(--color-paper);
-  color: var(--color-ink);
+  background-color: var(--color-bg);
+  color: var(--color-fg);
   font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -44,6 +92,11 @@ body {
 }
 
 ::selection {
-  background: var(--color-ink);
-  color: var(--color-paper);
+  background: var(--color-acc);
+  color: #140700;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-acc);
+  outline-offset: 2px;
 }

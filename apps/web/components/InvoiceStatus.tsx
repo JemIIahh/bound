@@ -10,7 +10,7 @@ export const INVOICE_STATUS: Record<InvoiceStatus, { label: string; tone: Tone; 
   paid: { label: 'Paid', tone: 'green' },
   blocked: { label: 'Blocked', tone: 'red' },
   failed: { label: 'Failed', tone: 'grey', note: 'Not paid. Open the log for details.' },
-  unconfirmed: { label: 'Awaiting confirmation', tone: 'amber', note: 'Sent, awaiting confirmation on Tempo.' },
+  unconfirmed: { label: 'Unconfirmed', tone: 'amber', note: 'Sent, awaiting confirmation on Tempo.' },
 }
 
 export const invoiceStatus = (s: string) => INVOICE_STATUS[s as InvoiceStatus] ?? { label: s, tone: 'grey' as Tone }
