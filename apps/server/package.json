@@ -7,7 +7,12 @@
     "start": "tsx src/index.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "testnet:lab": "tsx scripts/testnet-lab.ts"
+    "testnet:lab": "tsx scripts/testnet-lab.ts",
+    "demo:keys": "tsx scripts/demo-keys.ts",
+    "demo:deploy": "tsx scripts/deploy-registry.ts",
+    "demo:seed": "tsx scripts/seed-demo.ts",
+    "demo:lookalike": "tsx scripts/mine-lookalike.ts",
+    "demo:rehearse": "tsx scripts/rehearse.ts"
   },
   "dependencies": {
     "@bound/core": "workspace:*",
