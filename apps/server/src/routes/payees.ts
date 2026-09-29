@@ -2,18 +2,30 @@ import express from 'express'
 import { z } from 'zod'
 import { getAddress, isAddress, verifyTypedData, type Address, type Hex } from 'viem'
 import { desc, eq, or, sql } from 'drizzle-orm'
-import { compareNames, normalizeDomain } from '@bound/core'
+import { compareNames, normalizeDomain, normalizeName } from '@bound/core'
 import { HttpError, type AppDeps } from '../app'
 import { newId, newToken } from '../crypto'
 import { payees, payeeVerifications } from '../db/schema'
 import { productionPayeeServices, type PayeeServices, type PayeeVerificationRow } from '../services/payee-verification'
+import { processMiningQueue, type SerialJobQueue } from '../services/mining-queue'
 
 const DOMAIN_RE = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/
+const CONTROL_OR_FORMAT = /[\p{Cc}\p{Cf}]/u
 
 const createBody = z.object({
   wallet: z.string().refine((v) => isAddress(v), 'Invalid wallet address').transform((v) => getAddress(v)),
-  legalName: z.string().trim().min(2).max(120),
-  domain: z.string().max(253).transform(normalizeDomain).refine((d) => DOMAIN_RE.test(d), 'Invalid domain'),
+  legalName: z
+    .string()
+    .refine((n) => !CONTROL_OR_FORMAT.test(n), 'Legal name contains control or invisible characters')
+    .transform((n) => n.trim())
+    .pipe(z.string().min(2).max(120).refine((n) => !normalizeName(n).homoglyph, 'Legal name mixes look-alike characters from different scripts')),
+  // Store only normalizeDomain fixed points: the signed, DNS-proven and attested domain are the same string.
+  domain: z
+    .string()
+    .max(253)
+    .transform(normalizeDomain)
+    .refine((d) => normalizeDomain(d) === d, 'Domain is not in normal form')
+    .refine((d) => DOMAIN_RE.test(d), 'Invalid domain'),
   lei: z.preprocess(
     (v) => (v == null ? undefined : typeof v === 'string' ? v.trim().toUpperCase() || undefined : v), // '' / null = no LEI
     z.string().regex(/^[A-Z0-9]{20}$/, 'LEI must be 20 characters A-Z/0-9').optional(),
@@ -54,9 +66,20 @@ const serialize = (row: PayeeVerificationRow) => ({
   typedData: payeeClaimTypedData(row),
 })
 
+const hasDnsProof = (found: string[], row: Pick<PayeeVerificationRow, 'domain' | 'nonce'>) =>
+  found.some((v) => v.trim() === dnsRecordFor(row).value)
+
 const likePattern = (q: string) => `%${q.replace(/[\\%_]/g, (c) => '\\' + c)}%`
 
-export function payeesRouter(deps: AppDeps, services: PayeeServices = productionPayeeServices(deps)): express.Router {
+/**
+ * `miningQueue` defaults to the process-wide queue (one salt search at a time across every router);
+ * tests pass their own.
+ */
+export function payeesRouter(
+  deps: AppDeps,
+  services: PayeeServices = productionPayeeServices(deps),
+  miningQueue: SerialJobQueue = processMiningQueue,
+): express.Router {
   const { db } = deps
   const r = express.Router()
   const attesting = new Set<string>()
@@ -66,8 +89,29 @@ export function payeesRouter(deps: AppDeps, services: PayeeServices = production
     if (!row) throw new HttpError(404, 'Verification not found')
     return row
   }
+  /** Loads a verification that can still change; once attested, only GET reads it. */
+  const loadOpen = (id: string) => {
+    const row = load(id)
+    if (row.status === 'attested') throw new HttpError(409, 'Verification already attested')
+    return row
+  }
   const update = (id: string, values: Partial<PayeeVerificationRow>) =>
     db.update(payeeVerifications).set(values).where(eq(payeeVerifications.id, id)).run()
+
+  /** Queue job: mine, then record the outcome. Never rejects, even if the DB write fails. */
+  const mineInto = async (id: string, wallet: Address) => {
+    try {
+      const { salt, masterId } = await services.mineSalt(wallet)
+      update(id, { salt, masterId, masterStatus: 'mined' })
+    } catch (e) {
+      console.error('[salt-miner]', id, e)
+      try {
+        update(id, { masterStatus: 'failed' })
+      } catch (e2) {
+        console.error('[salt-miner] could not record failure', id, e2)
+      }
+    }
+  }
 
   r.post('/payee-verifications', (req, res) => {
     const body = createBody.parse(req.body)
@@ -89,7 +133,7 @@ export function payeesRouter(deps: AppDeps, services: PayeeServices = production
   })
 
   r.post('/payee-verifications/:id/signature', async (req, res) => {
-    const row = load(req.params.id)
+    const row = loadOpen(req.params.id)
     const { signature } = signatureBody.parse(req.body)
     const sigVerified = await verifyTypedData({ address: row.wallet as Address, ...payeeClaimTypedData(row), signature: signature as Hex }).catch(() => false)
     // A failed attempt never downgrades a wallet that already proved control.
@@ -98,16 +142,15 @@ export function payeesRouter(deps: AppDeps, services: PayeeServices = production
   })
 
   r.post('/payee-verifications/:id/check-dns', async (req, res) => {
-    const row = load(req.params.id)
-    const found = await services.resolveTxt(`_bound.${row.domain}`)
-    const expected = dnsRecordFor(row).value
-    const dnsVerified = found.some((v) => v.trim() === expected)
+    const row = loadOpen(req.params.id)
+    const found = await services.resolveTxt(dnsRecordFor(row).name)
+    const dnsVerified = hasDnsProof(found, row)
     update(row.id, { dnsVerified: dnsVerified ? 1 : 0 })
     res.json({ dnsVerified, found })
   })
 
   r.post('/payee-verifications/:id/check-lei', async (req, res) => {
-    const row = load(req.params.id)
+    const row = loadOpen(req.params.id)
     if (!row.lei) throw new HttpError(409, 'No LEI on this verification')
     const record = await services.lookupLei(row.lei)
     const leiVerified = !!record && record.status === 'ISSUED' && compareNames(row.legalName, record.legalName).result !== 'NO_MATCH'
@@ -116,24 +159,24 @@ export function payeesRouter(deps: AppDeps, services: PayeeServices = production
   })
 
   r.post('/payee-verifications/:id/mine-master', (req, res) => {
-    const row = load(req.params.id)
-    if (!row.sigVerified) throw new HttpError(409, 'Wallet signature required')
-    if (row.masterStatus === 'mining') {
-      res.status(202).json({ masterStatus: 'mining' })
-      return
-    }
+    const row = loadOpen(req.params.id)
+    // Mining burns every core for a while: only for a wallet that proved both the key and the domain.
+    if (!row.sigVerified || !row.dnsVerified) throw new HttpError(409, 'Wallet signature and DNS proof required')
     if (row.masterId) {
       // Already mined (the salt is deterministic): register it / re-check via /master instead.
       res.json({ masterStatus: row.masterStatus })
       return
     }
-    update(row.id, { masterStatus: 'mining' })
-    services.startMining(row.id, getAddress(row.wallet))
+    // Start (or restart after a process restart left the row in 'mining') unless already queued/running.
+    if (!miningQueue.has(row.id)) {
+      update(row.id, { masterStatus: 'mining' })
+      miningQueue.add(row.id, () => mineInto(row.id, getAddress(row.wallet)))
+    }
     res.status(202).json({ masterStatus: 'mining' })
   })
 
   r.post('/payee-verifications/:id/master', async (req, res) => {
-    const row = load(req.params.id)
+    const row = loadOpen(req.params.id)
     const { txHash } = masterBody.parse(req.body)
     if (!row.masterId) throw new HttpError(409, 'No mined virtual master for this verification')
     const ok = await services.checkMaster(row.masterId as Hex, getAddress(row.wallet), txHash as Hex)
@@ -143,12 +186,16 @@ export function payeesRouter(deps: AppDeps, services: PayeeServices = production
   })
 
   r.post('/payee-verifications/:id/attest', async (req, res) => {
-    const row = load(req.params.id)
-    if (row.status === 'attested') throw new HttpError(409, 'Already attested')
+    const row = loadOpen(req.params.id)
     if (!row.sigVerified || !row.dnsVerified) throw new HttpError(409, 'Signature and DNS proof required')
     if (attesting.has(row.id)) throw new HttpError(409, 'Attestation already in progress')
     attesting.add(row.id)
     try {
+      // The proof must still be published at the moment Bound attests.
+      if (!hasDnsProof(await services.resolveTxt(dnsRecordFor(row).name), row)) {
+        update(row.id, { dnsVerified: 0 })
+        throw new HttpError(409, 'DNS proof no longer present')
+      }
       const level: 1 | 2 = row.leiVerified ? 2 : 1
       const out = await services.writeAttestation(row, level).catch((e) => {
         if (!(e instanceof HttpError)) update(row.id, { status: 'failed' })

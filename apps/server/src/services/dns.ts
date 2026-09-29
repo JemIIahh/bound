@@ -6,6 +6,9 @@ export async function resolveTxt(name: string): Promise<string[]> {
   })
   if (!res.ok) return []
   const body: any = await res.json()
+  // Only TXT answers (type 16): a CNAME in the chain must not count as a record value.
   // Long TXT values arrive as several quoted chunks: "abc" "def" → abcdef
-  return (body.Answer ?? []).map((a: any) => String(a.data).replace(/^"|"$/g, '').replace(/"\s*"/g, ''))
+  return (body.Answer ?? [])
+    .filter((a: any) => a?.type === 16)
+    .map((a: any) => String(a.data).replace(/^"|"$/g, '').replace(/"\s*"/g, ''))
 }

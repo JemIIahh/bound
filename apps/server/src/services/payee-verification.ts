@@ -1,9 +1,8 @@
 import { keccak256, stringToHex, getAddress, zeroAddress, type Address, type Hex } from 'viem'
 import { Abis } from 'viem/tempo'
-import { eq } from 'drizzle-orm'
 import { ADDRESS_REGISTRY, boundRegistryAbi, normalizeDomain, readPayee } from '@bound/core'
 import { HttpError, type AppDeps } from '../app'
-import { payeeVerifications } from '../db/schema'
+import type { payeeVerifications } from '../db/schema'
 import { resolveTxt } from './dns'
 import { lookupLei } from './gleif'
 import { mineSalt } from './salt-miner'
@@ -15,8 +14,8 @@ export type PayeeServices = {
   resolveTxt: (name: string) => Promise<string[]>
   lookupLei: (lei: string) => Promise<{ legalName: string; status: string } | null>
   writeAttestation: (row: PayeeVerificationRow, level: 1 | 2) => Promise<{ txHash: Hex; action: 'attest' | 'supersede' }>
-  /** Starts mining in the background; the implementation records the outcome on the row (`mined` | `failed`). */
-  startMining: (id: string, wallet: Address) => void
+  /** TIP-1022 salt search for `wallet` (CPU-heavy). The router schedules it on a one-at-a-time queue. */
+  mineSalt: (wallet: Address) => Promise<{ salt: Hex; masterId: Hex }>
   /** True iff the TIP-1022 registry maps `masterId` to `wallet`. `txHash`, when given, is awaited first. */
   checkMaster: (masterId: Hex, wallet: Address, txHash?: Hex) => Promise<boolean>
 }
@@ -24,16 +23,15 @@ export type PayeeServices = {
 const NO_MASTER = '0x00000000' as Hex
 
 export function productionPayeeServices(deps: AppDeps): PayeeServices {
-  const { chain, config, db } = deps
+  const { chain, config } = deps
   const pub = chain.pub
   // core readPayee takes viem's plain PublicClient; the Tempo-chain client is structurally compatible at runtime.
   const payeeAt = (wallet: Address) => readPayee(pub as any, config.registry, wallet)
-  const setRow = (id: string, values: Partial<PayeeVerificationRow>) =>
-    db.update(payeeVerifications).set(values).where(eq(payeeVerifications.id, id)).run()
 
   return {
     resolveTxt,
     lookupLei,
+    mineSalt,
 
     /**
      * Writes the payee to BoundRegistry, choosing the call the contract will accept:
@@ -44,7 +42,11 @@ export function productionPayeeServices(deps: AppDeps): PayeeServices {
      */
     async writeAttestation(row, level) {
       const wallet = getAddress(row.wallet)
-      const domain = normalizeDomain(row.domain) // the contract hashes raw bytes: always lowercase
+      // Attest exactly the domain that was signed and proven in DNS. It was stored as a normalizeDomain
+      // fixed point (the contract hashes raw bytes); never re-normalize here, or the proven and attested
+      // domains could differ.
+      const domain = row.domain
+      if (normalizeDomain(domain) !== domain) throw new Error(`Stored domain "${domain}" is not in normal form; refusing to attest`)
       const [holderRaw, self] = await Promise.all([
         pub.readContract({ address: config.registry, abi: boundRegistryAbi, functionName: 'currentWalletForDomain', args: [keccak256(stringToHex(domain))] }),
         payeeAt(wallet),
@@ -69,15 +71,6 @@ export function productionPayeeServices(deps: AppDeps): PayeeServices {
         : await chain.attester.writeContractSync({ address: config.registry, abi: boundRegistryAbi, functionName: 'attest', args: [wallet, row.legalName, domain, lei, masterId, level, evidence] })
       if (receipt.status !== 'success') throw new Error(`Attestation reverted (${receipt.transactionHash})`)
       return { txHash: receipt.transactionHash, action }
-    },
-
-    startMining(id, wallet) {
-      mineSalt(wallet)
-        .then(({ salt, masterId }) => setRow(id, { salt, masterId, masterStatus: 'mined' }))
-        .catch((e) => {
-          console.error('[salt-miner]', id, e)
-          setRow(id, { masterStatus: 'failed' })
-        })
     },
 
     async checkMaster(masterId, wallet, txHash) {
