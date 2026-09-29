@@ -251,7 +251,7 @@ async function main() {
     n = 3
     r = await mine(n, 30 * 60_000)
   }
-  if (!r) die('no lookalike found')
+  if (!r) return die('no lookalike found')
   const address = privateKeyToAddress(r.key)
   setEnv(SERVER_ENV, { LAB_LOOKALIKE_PRIVATE_KEY: r.key, LAB_LOOKALIKE_ADDRESS: address, LOOKALIKE_CHARS: String(n) })
   writeWebEnv()
