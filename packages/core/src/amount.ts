@@ -1,6 +1,6 @@
 const CURRENCY = String.raw`(?:[A-Za-z]{2,5}|[$€£₦])`
 // optional leading or trailing currency token only; digits with valid thousands groups; optional decimals
-const AMOUNT_RE = new RegExp(String.raw`^(?:${CURRENCY}\s?)?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?(?:\s?${CURRENCY})?$`)
+const AMOUNT_RE = new RegExp(String.raw`^(?:${CURRENCY}\s?)?([1-9]\d{0,2}(?:,\d{3})+|\d+)(?:\.(\d+))?(?:\s?${CURRENCY})?$`)
 
 export function parseAmount(input: string, decimals = 6): bigint {
   const raw = input.trim()
