@@ -135,6 +135,7 @@ The server (`apps/server`) and the web app (`apps/web`) deploy separately, for e
 ### Known limitations
 
 - A BoundRegistry `supersede` to a different domain leaves the old domain mapped to the old wallet until that verification is revoked.
+- A lookalike domain that was registered BEFORE the real brand joined Bound counts as the older registration, so the brand's own domain is the one flagged (CLOSE_MATCH). Brands should register early. An LEI (level 2) still lets a late brand verify under its own name, but it does not change which domain counts as older.
 - The org token is stored in the browser's `localStorage`: an organization opens in the browser that created it, and anyone with access to that browser profile holds the token.
 - Rate limits are in memory and per process: several server instances each keep their own counts.
 
