@@ -112,12 +112,24 @@ describe('rawTransfer (lab guard-off)', () => {
     expect(ops.send).not.toHaveBeenCalled()
     expect(payment(db)).toBeUndefined()
   })
-  test('a spending-limit refusal is also force-sent (Tempo refuses it too)', async () => {
-    const { db } = lab()
+  test('a spending-limit refusal is force-sent only when the amount exceeds the FULL per-period limit', async () => {
+    const { db } = lab() // org limitBase = 1 base unit, amount 10 USD: no refill can ever cover it
     const ops = { preflight: refused('SpendingLimitExceeded'), send: vi.fn(async () => ({ txHash: '0xrej', status: 'reverted' })) }
     const r = await rawTransfer({ db, ops } as any, 'inv1', { to: attacker, amount: '10', memo: 'INV-EVIL' })
     expect(r).toMatchObject({ chain: 'rejected', code: 'SpendingLimitExceeded' })
     expect(ops.send).toHaveBeenCalledOnce()
+  })
+  test('a spending-limit refusal within the per-period limit is never sent (a period refill could let it through)', async () => {
+    for (const limitBase of ['100000000', '10000000']) { // limit 100 USD, and limit == amount (10 USD)
+      const { db } = lab()
+      db.update(orgs).set({ limitBase }).where(eq(orgs.id, 'org1')).run()
+      const ops = { preflight: refused('SpendingLimitExceeded'), send: vi.fn() }
+      const r = await rawTransfer({ db, ops } as any, 'inv1', { to: acme, amount: '10', memo: 'INV-1' })
+      expect(r).toEqual({ ok: false, chain: 'not_sent', reason: 'lab only force-sends payments Tempo will refuse' })
+      expect(ops.send).not.toHaveBeenCalled()
+      expect(payment(db)?.status).toBe('rejected')
+      expect(invoice(db).status).toBe('blocked')
+    }
   })
   test('never sends when the preflight says Tempo would ACCEPT the payment', async () => {
     const { db } = lab()
@@ -207,6 +219,8 @@ describe('rawTransfer (lab guard-off)', () => {
       const pending = rawTransfer({ db, ops } as any, 'inv1', { to: attacker, amount: '10', memo: 'INV-EVIL' }, { receiptTimeoutMs: 5_000, receiptPollMs: 5 })
       await vi.waitFor(() => expect(ops.getReceipt).toHaveBeenCalled())
       await withOrgLock('org1', async () => {}) // would hang if the lock were still held
+      // crash-safe: before settling, the row already records the possibly-sent tx
+      expect(payment(db)).toMatchObject({ status: 'unknown', txHash: HASH })
       resolveReceipt('reverted')
       expect(await pending).toMatchObject({ chain: 'rejected' })
     })

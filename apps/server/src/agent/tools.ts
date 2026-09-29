@@ -74,27 +74,42 @@ type RawTransferResult =
 
 export type RawTransferOptions = { receiptTimeoutMs?: number; receiptPollMs?: number }
 
-/** Keychain refusals Tempo enforces at execution. The lab only ever force-sends a payment the preflight says one of these will stop. */
-const TEMPO_WILL_REFUSE = new Set(['CallNotAllowed', 'SpendingLimitExceeded'])
 export const LAB_GATE_REASON = 'lab only force-sends payments Tempo will refuse'
 /** Upper bound on waiting for the receipt of a possibly-broadcast lab transfer. */
 const RECEIPT_TIMEOUT_MS = 60_000
 const RECEIPT_POLL_MS = 2_000
 
-type LabTransfer = { orgId: string; invoiceId: string; to: Address; amount: bigint; memo: Hex }
+/** `limitBase` is the key's FULL per-period spending limit (null if unreadable). */
+type LabTransfer = { orgId: string; invoiceId: string; to: Address; amount: bigint; memo: Hex; limitBase: bigint | null }
+
+/**
+ * The lab force-sends only what Tempo is certain to refuse at execution:
+ * - CallNotAllowed: the recipient is outside the key's allowlist (no time-dependent state);
+ * - SpendingLimitExceeded only when the amount exceeds the FULL per-period limit. A smaller amount
+ *   could succeed if the limit period rolls over (refills) between preflight and execution.
+ */
+function tempoWillRefuse(pre: { ok: false; code: string }, t: LabTransfer): boolean {
+  if (pre.code === 'CallNotAllowed') return true
+  return pre.code === 'SpendingLimitExceeded' && t.limitBase !== null && t.amount > t.limitBase
+}
+
+const parseBase = (v: string): bigint | null => {
+  try { return BigInt(v) } catch { return null }
+}
 type Locked = { kind: 'done'; result: RawTransferResult } | { kind: 'maybe_sent'; paymentId: string; txHash?: Hex; code?: string }
 
 /**
  * ATTACK LAB ONLY ("guard off"): Bound's payee checks are off, so the demo can show Tempo itself
  * refusing the payment. Safety rails that stay on:
  * - lab invoices of an authorized org only, and at most one transfer per invoice;
- * - it broadcasts ONLY when the preflight shows a keychain refusal (CallNotAllowed /
- *   SpendingLimitExceeded). A payment Tempo would accept (or an unknown preflight) is never sent,
- *   so the lab cannot move funds;
+ * - it broadcasts ONLY when Tempo is certain to refuse it: preflight CallNotAllowed, or
+ *   SpendingLimitExceeded for an amount above the full per-period limit (tempoWillRefuse). A payment
+ *   Tempo would or might accept (or an unknown preflight) is never sent, so the lab cannot move funds;
  * - the send is forced (no simulation) so the refusal is a mined, reverted tx with a public hash;
  * - it runs under the per-org lock (no nonce race with payInvoice); the lock is not re-entrant,
- *   so nothing inside it may call payInvoice. A possibly-broadcast outcome is settled after the
- *   lock is released, by a bounded (≤ 60 s) receipt wait.
+ *   so nothing inside it may call payInvoice. A possibly-broadcast outcome is recorded as 'unknown'
+ *   with its hash inside the lock (crash-safe), then settled after the lock is released by a bounded
+ *   (≤ 60 s) receipt wait.
  */
 export async function rawTransfer(deps: ServiceDeps, invoiceId: string, p: { to: string; amount: string; memo: string }, opts: RawTransferOptions = {}): Promise<RawTransferResult> {
   const inv = loadInvoice(deps, invoiceId)
@@ -105,7 +120,10 @@ export async function rawTransfer(deps: ServiceDeps, invoiceId: string, p: { to:
   const to = getAddress(p.to.trim()) as Address
   const amt = positiveAmount(p.amount)
   if (!amt.ok) return { ok: false, error: amt.error }
-  const t: LabTransfer = { orgId: inv.orgId, invoiceId, to, amount: amt.amount, memo: memoFromInvoice(p.memo.trim() || inv.invoiceNo?.trim() || inv.id) }
+  const t: LabTransfer = {
+    orgId: inv.orgId, invoiceId, to, amount: amt.amount, limitBase: parseBase(org.limitBase),
+    memo: memoFromInvoice(p.memo.trim() || inv.invoiceNo?.trim() || inv.id),
+  }
 
   const out = await withOrgLock(t.orgId, () => rawTransferLocked(deps, t))
   return out.kind === 'done' ? out.result : settleMaybeSent(deps, t, out, opts)
@@ -151,8 +169,8 @@ async function rawTransferLocked(deps: ServiceDeps, t: LabTransfer): Promise<Loc
 
   let pre: { ok: true } | { ok: false; code: string; message: string } | null = null
   try { pre = await deps.ops.preflight({ orgId, to, amount, memo }) } catch (e) { console.error('[lab] preflight errored', invoiceId, e) }
-  if (!pre || pre.ok || !TEMPO_WILL_REFUSE.has(pre.code)) {
-    // Tempo might accept this payment (or we cannot tell): the lab never sends it.
+  if (!pre || pre.ok || !tempoWillRefuse(pre, t)) {
+    // Tempo would or might accept this payment (or we cannot tell): the lab never sends it.
     setPayment(deps, paymentId, { status: 'rejected' })
     setInvoice(deps, invoiceId, { status: 'blocked' })
     logEvent(deps.db, { orgId, kind: 'blocked', invoiceId, detail: { ...labDetail(t), reason: 'lab_gate', preflight: pre ? (pre.ok ? 'ok' : pre.code) : 'error' } })
@@ -172,7 +190,7 @@ async function rawTransferLocked(deps: ServiceDeps, t: LabTransfer): Promise<Loc
     }
     console.error('[lab] raw transfer outcome unknown', invoiceId, e)
     const maybe = (e as { txHash?: unknown } | null)?.txHash
-    return { kind: 'maybe_sent', paymentId, code, ...(typeof maybe === 'string' && isHex(maybe) ? { txHash: maybe } : {}) }
+    return maybeSent(deps, paymentId, code, typeof maybe === 'string' && isHex(maybe) ? maybe : undefined)
   }
 
   // Explicit mapping, as in payInvoice: only 'reverted' is a chain rejection and only 'success' moved money.
@@ -180,7 +198,13 @@ async function rawTransferLocked(deps: ServiceDeps, t: LabTransfer): Promise<Loc
   if (sent?.status === 'success') return { kind: 'done', result: recordPaid(deps, t, paymentId, sent.txHash) } // defensive: the gate should prevent this
   console.error('[lab] unrecognised send result; treating as unknown', invoiceId, sent)
   const hash = sent?.txHash
-  return { kind: 'maybe_sent', paymentId, code, ...(typeof hash === 'string' && isHex(hash) ? { txHash: hash } : {}) }
+  return maybeSent(deps, paymentId, code, typeof hash === 'string' && isHex(hash) ? hash : undefined)
+}
+
+/** Persist "possibly sent" with its hash while still holding the lock (crash-safe), then settle outside it. */
+function maybeSent(deps: ServiceDeps, paymentId: string, code: string, txHash: Hex | undefined): Locked {
+  setPayment(deps, paymentId, { status: 'unknown', txHash: txHash ?? null })
+  return { kind: 'maybe_sent', paymentId, code, ...(txHash ? { txHash } : {}) }
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))

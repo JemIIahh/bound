@@ -106,14 +106,14 @@ const same = (x: string, y: string) => x.toLowerCase() === y.toLowerCase()
 
 /**
  * Another invoice of this org already paying (or paid, or possibly paid) the same effective payee with
- * the same memo is a duplicate invoice. Only definitely-not-moved payments (rejected/reverted) are ignored,
- * and so are attack-lab invoices' payments (demo traffic must never block a real invoice).
+ * the same memo is a duplicate invoice. Only definitely-not-moved payments (rejected/reverted) are ignored.
+ * Attack-lab payments count too: a guarded lab run pays real, approved payees through payInvoice.
  */
 async function findDuplicate(deps: ServiceDeps, p: { orgId: string; invoiceId: string; memo: Hex; to: Address; effective: Address }): Promise<string | null> {
-  const rows = deps.db.select({ p: payments }).from(payments).innerJoin(invoices, eq(invoices.id, payments.invoiceId)).where(and(
+  const rows = deps.db.select().from(payments).where(and(
     eq(payments.orgId, p.orgId), eq(payments.memo, p.memo), ne(payments.invoiceId, p.invoiceId),
-    notInArray(payments.status, ['rejected', 'reverted']), eq(invoices.lab, 0),
-  )).all().map((r) => r.p)
+    notInArray(payments.status, ['rejected', 'reverted']),
+  )).all()
   for (const r of rows) {
     const eff = same(r.toAddress, p.to) ? p.effective
       : isVirtualAddress(r.toAddress) ? getAddress((await deps.ops.resolveRecipient(getAddress(r.toAddress))).effective)

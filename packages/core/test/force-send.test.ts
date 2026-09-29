@@ -43,6 +43,16 @@ function recordingClient(network: 'testnet' | 'mainnet' = 'testnet') {
   return { client, calls, account, net }
 }
 
+/** A Tempo client whose transport records and then throws on every RPC call (never touches a network). */
+function throwingClient(network: 'testnet' | 'mainnet') {
+  const calls: string[] = []
+  const net = getNetwork(network)
+  const account = agentAccount(generatePrivateKey(), root)
+  const transport = custom({ async request({ method }: { method: string }) { calls.push(method); throw new Error(`network access in test: ${method}`) } })
+  const client = createClient({ account, chain: net.chain, transport }).extend(publicActions).extend(walletActions)
+  return { client, calls, account }
+}
+
 const params = (account: ReturnType<typeof agentAccount>, network: 'testnet' | 'mainnet' = 'testnet') =>
   ({ network, account, token: getNetwork(network).token, to: attacker, amount: 1_000_000n, memo }) as const
 
@@ -69,12 +79,16 @@ describe('forceSendWithKey', () => {
   })
 
   test('refuses Tempo mainnet (4217) unless explicitly allowed, before any RPC', async () => {
-    const { client, calls, account } = recordingClient('mainnet')
+    // a client whose transport throws on ANY call: even if the guard regressed, nothing can reach a real network
+    const { client, calls, account } = throwingClient('mainnet')
     const err = await forceSendWithKey(params(account, 'mainnet'), { client: client as any }).catch((e) => e)
     expect(err).toBeInstanceOf(PaymentRejected)
     expect(err.message).toMatch(/mainnet/i)
     expect(calls).toHaveLength(0)
-    await expect(forceSendWithKey(params(account, 'mainnet'))).rejects.toBeInstanceOf(PaymentRejected)
+    const explicitFalse = await forceSendWithKey(params(account, 'mainnet'), { client: client as any, allowMainnet: false }).catch((e) => e)
+    expect(explicitFalse).toBeInstanceOf(PaymentRejected)
+    expect(explicitFalse.message).toMatch(/mainnet/i)
+    expect(calls).toHaveLength(0)
   })
 
   test('mainnet is only reachable with allowMainnet', async () => {
