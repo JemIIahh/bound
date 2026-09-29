@@ -394,10 +394,12 @@ export function productionChainOps(deps: AppDeps): ChainOps {
       const head = await pub.getBlockNumber()
       const logs = await pub.getContractEvents({
         address: token, abi: Abis.tip20, eventName: 'TransferWithMemo',
-        args: { from: getAddress(org.rootAddress), memo },
+        args: { from: getAddress(org.rootAddress), to: match?.to, memo },
         fromBlock: head > MEMO_LOOKBACK ? head - MEMO_LOOKBACK : 0n, toBlock: head,
       })
-      const hit = logs.find((l: any) => !match || l.args?.amount === match.amount)
+      // the same memo + amount to a different recipient is not this payment
+      const sameTo = (l: any) => { try { return getAddress(l.args?.to) === getAddress(match!.to) } catch { return false } }
+      const hit = logs.find((l: any) => !match || (l.args?.amount === match.amount && sameTo(l)))
       return (hit?.transactionHash as Hex | undefined) ?? null
     },
 
@@ -407,7 +409,10 @@ export function productionChainOps(deps: AppDeps): ChainOps {
     },
 
     async remainingLimit(account, keyId) {
-      return (await pub.readContract({ address: KEYCHAIN, abi: Abis.accountKeychain, functionName: 'getRemainingLimit', args: [account, keyId, token] })) as bigint
+      // getRemainingLimitWithPeriod returns (remaining uint256, periodEnd uint64); the period-aware read
+      // reflects a rolled-over period, which plain getRemainingLimit may not
+      const [remaining] = (await pub.readContract({ address: KEYCHAIN, abi: Abis.accountKeychain, functionName: 'getRemainingLimitWithPeriod', args: [account, keyId, token] })) as readonly [bigint, bigint]
+      return remaining
     },
 
     async sendDemoRoot(call) {
