@@ -8,6 +8,8 @@ export type AppDeps = { db: Db; chain: Chain; config: Config }
 
 export function createApp(deps: AppDeps) {
   const app = express()
+  // One proxy hop (Railway's edge): req.ip is the client, so per-IP rate limits work; `true` would trust spoofable X-Forwarded-For chains.
+  app.set('trust proxy', 1)
   app.use(cors({ origin: deps.config.webOrigin === '*' ? true : deps.config.webOrigin }))
   app.use(express.json({ limit: '12mb' }))
   app.get('/health', (_req, res) => { res.json({ ok: true, network: deps.chain.network }) })

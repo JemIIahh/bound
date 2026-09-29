@@ -2,7 +2,7 @@
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { config as loadDotenv } from 'dotenv'
+import { config as loadDotenv, parse as parseDotenv } from 'dotenv'
 import { Abis } from 'viem/tempo'
 import { getNetwork, publicClientFor } from '@bound/core'
 
@@ -74,7 +74,8 @@ export function setEnv(file: string, updates: Record<string, string>, header?: s
  * Unknown values are left empty until the step that produces them has run.
  */
 export function writeWebEnv() {
-  const e = process.env
+  // re-read the file: another script may have updated it since this process started
+  const e = { ...process.env, ...(existsSync(SERVER_ENV) ? parseDotenv(readFileSync(SERVER_ENV)) : {}) }
   setEnv(WEB_ENV, {
     NEXT_PUBLIC_API_URL: `http://localhost:${e.PORT || 8787}`,
     NEXT_PUBLIC_TEMPO_NETWORK: 'testnet',
