@@ -72,8 +72,11 @@ function walletInit() {
   announce()
 }
 
-/** One per browser context: like a real wallet, it only exposes the account once the page asked to connect. */
-const walletHandler = () => {
+/**
+ * One per browser context: like a real wallet, it only exposes the account once the page asked to connect.
+ * `live` (only with LIVE_ROOT_KEY) really sends transactions on testnet; fixture contexts always get a fake hash.
+ */
+const walletHandler = (live = false) => {
   let authorized = false
   return async (method, params) => {
     switch (method) {
@@ -101,7 +104,7 @@ const walletHandler = () => {
       case 'eth_estimateGas':
         return '0x30000'
       case 'eth_sendTransaction':
-        if (liveChain) {
+        if (live && liveChain) {
           const [t] = params
           return liveChain.sendTransaction({ to: t.to, data: t.data })
         }
@@ -194,10 +197,10 @@ const fixtureRow = (over = {}) => {
 // ---------- harness ----------
 const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' }
 
-async function open(width, { payee, payer, orgToken } = {}) {
+async function open(width, { payee, payer, orgToken, liveWallet = false } = {}) {
   const browser = await chromium.launch()
   const context = await browser.newContext({ viewport: { width, height: width < 600 ? 844 : 900 } })
-  await context.exposeFunction('__wallet', walletHandler())
+  await context.exposeFunction('__wallet', walletHandler(liveWallet))
   await context.addInitScript(walletInit)
   const state = { row: payee ? fixtureRow(payee.row) : null, minePosts: 0, scenario: payee?.scenario ?? {} }
   if (payee) {
@@ -453,7 +456,7 @@ const demoToken = { id: fx.ORG_ID, token: 'fixture-token' }
 
 async function runPayer(width) {
   // Org setup: live against the local API (org creation is off-chain).
-  let s = await open(width)
+  let s = await open(width, { liveWallet: true })
   await s.page.goto(`${WEB}/app`)
   await s.page.getByRole('button', { name: 'Connect wallet' }).last().waitFor()
   await shot(s, 'app-1-connect', LIVE)
