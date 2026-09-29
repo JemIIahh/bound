@@ -19,6 +19,7 @@ const TONE: Record<string, Tone> = {
   key_unrestricted: 'red',
   asked: 'amber',
   over_limit: 'amber',
+  unconfirmed: 'amber',
 }
 
 const str = (v: unknown) => (typeof v === 'string' ? v : undefined)
@@ -55,6 +56,8 @@ function describe(e: OrgEvent, payee: string | undefined): string {
       return `Approval requested for ${to}${amount ? ` (${amount})` : ''}`
     case 'over_limit':
       return `${amount ?? 'A payment'} to ${to} is over the agent's spending limit. Pay manually or raise the limit`
+    case 'unconfirmed':
+      return `Sent ${amount ? `${amount} ` : ''}to ${to}, awaiting confirmation on Tempo`
     case 'preflight_failed':
       return `Tempo's pre-check refused a payment to ${to}${str(d.code) ? ` (${str(d.code)})` : ''}`
     case 'key_unrestricted':

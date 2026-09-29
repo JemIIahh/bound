@@ -305,7 +305,7 @@ export const labRuns = {
     address: ACME,
     invoiceNo: 'INV-1046',
     senderDomain: 'acme.com',
-    status: 'failed',
+    status: 'blocked',
     agentLog: log([
       ...recorded(ACME, 'INV-1046', 'acme.com'),
       { kind: 'tool_call', name: 'raw_transfer', data: { to: ACME, amount: '12.50', memo: 'INV-1046' } },
@@ -335,5 +335,12 @@ export function labOverview({ root, now, runs }) {
   const ov = overview({ root, now })
   const detailOnly = new Set(['agentLog', 'payment', 'raw', 'orgId'])
   const labRows = runs.map((run, i) => ({ ...Object.fromEntries(Object.entries(run).filter(([k]) => !detailOnly.has(k))), createdAt: now - i * 40 }))
-  return { ...ov, invoices: [...labRows, ...ov.invoices] }
+  // the events the server logs for guard-off runs (chain rejection, lab gate)
+  const labEvents = runs.flatMap((r, i) => {
+    const ev = { id: `ev_${r.id}`, orgId: ORG_ID, invoiceId: r.id, createdAt: now - i * 40, txHash: null }
+    if (r.payment?.status === 'reverted') return [{ ...ev, kind: 'chain_rejected', txHash: r.payment.txHash, detail: { to: r.address, amount: r.amountBase, code: 'CallNotAllowed', lab: true } }]
+    if (r.agentLog.some((e) => e.data?.chain === 'not_sent')) return [{ ...ev, kind: 'blocked', detail: { to: r.address, amount: r.amountBase, lab: true, reason: 'lab_gate', preflight: 'ok' } }]
+    return []
+  })
+  return { ...ov, invoices: [...labRows, ...ov.invoices], events: [...labEvents, ...ov.events] }
 }

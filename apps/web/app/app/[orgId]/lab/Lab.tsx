@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { ApiError, api, errorMessage, type InvoiceDetail, type OrgInvoice } from '@/lib/api'
+import { ApiError, api, errorMessage, type InvoiceDetail, type OrgEvent, type OrgInvoice } from '@/lib/api'
 import { txUrl } from '@/lib/chain'
 import { ago, usd } from '@/lib/format'
 import { useOverview } from '@/lib/hooks'
@@ -177,7 +177,14 @@ export function Lab({ orgId }: { orgId: string }) {
         ) : (
           <ul className="mt-3 flex flex-col border-t border-black/10">
             {labRuns.map((inv) => (
-              <RunRow key={inv.id} inv={inv} meta={runs[inv.id]} active={selected === inv.id} onSelect={() => setSelected(inv.id)} />
+              <RunRow
+                key={inv.id}
+                inv={inv}
+                events={o.events.filter((e) => e.invoiceId === inv.id)}
+                meta={runs[inv.id]}
+                active={selected === inv.id}
+                onSelect={() => setSelected(inv.id)}
+              />
             ))}
           </ul>
         )}
@@ -209,7 +216,7 @@ function GuardSwitch({ off, onChange }: { off: boolean; onChange: (off: boolean)
   )
 }
 
-function RunRow({ inv, meta, active, onSelect }: { inv: OrgInvoice; meta: RunMeta | undefined; active: boolean; onSelect: () => void }) {
+function RunRow({ inv, events, meta, active, onSelect }: { inv: OrgInvoice; events: OrgEvent[]; meta: RunMeta | undefined; active: boolean; onSelect: () => void }) {
   const p = meta?.preset ? PRESETS.find((x) => x.key === meta.preset) : undefined
   const info = [inv.invoiceNo, usd(inv.amountBase), meta?.guardOff ? 'Guard off' : null, ago(inv.createdAt)].filter(Boolean).join(' · ')
   return (
@@ -221,7 +228,13 @@ function RunRow({ inv, meta, active, onSelect }: { inv: OrgInvoice; meta: RunMet
           </p>
           <p className="mt-0.5 truncate font-mono text-[11px] text-graphite">{info}</p>
         </div>
-        <StatusBadge status={inv.status} />
+        {events.some((e) => e.kind === 'chain_rejected') ? (
+          <Badge tone="red">Rejected by Tempo</Badge>
+        ) : events.some((e) => e.kind === 'blocked' && e.detail?.reason === 'lab_gate') ? (
+          <Badge tone="grey">Not sent</Badge>
+        ) : (
+          <StatusBadge status={inv.status} />
+        )}
       </button>
     </li>
   )

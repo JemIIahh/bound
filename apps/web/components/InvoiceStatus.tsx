@@ -27,4 +27,5 @@ export function StatusBadge({ status }: { status: string }) {
 export const BLOCK_REASONS: Record<string, string> = {
   duplicate_invoice: 'Already paid: duplicate invoice',
   rejected_by_approver: 'Rejected by you',
+  lab_gate: 'Not sent — the lab only fires payments Tempo will refuse',
 }
