@@ -5,10 +5,14 @@ import { KEYCHAIN, MAX_RECIPIENTS, TRANSFER_WITH_MEMO_SELECTOR } from './constan
 
 export class AllowlistError extends Error {}
 
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+
 function assertList(recipients: Address[]): Address[] {
-  if (recipients.length === 0) throw new AllowlistError('Recipient list must never be empty (an empty list may allow any recipient).')
-  if (recipients.length > MAX_RECIPIENTS) throw new AllowlistError(`Tempo allows at most ${MAX_RECIPIENTS} recipients per key scope.`)
-  return recipients.map((r) => getAddress(r))
+  const list = [...new Set(recipients.map((r) => getAddress(r)))]
+  if (list.length === 0) throw new AllowlistError('Recipient list must never be empty (an empty list allows any recipient).')
+  if (list.includes(ZERO_ADDRESS)) throw new AllowlistError('Recipient list must not contain the zero address.')
+  if (list.length > MAX_RECIPIENTS) throw new AllowlistError(`Tempo allows at most ${MAX_RECIPIENTS} recipients per key scope.`)
+  return list
 }
 
 export function withRecipient(list: Address[], add: Address): Address[] {
@@ -52,10 +56,15 @@ export function buildSetAllowlistCall(p: { keyId: Address; token: Address; recip
 
 export async function readAllowlist(client: ReadClient, p: { account: Address; keyId: Address; token: Address }): Promise<Address[]> {
   const [isScoped, scopes] = (await client.readContract({ address: KEYCHAIN, abi: Abis.accountKeychain, functionName: 'getAllowedCalls', args: [p.account, p.keyId] })) as readonly [boolean, readonly { target: Address; selectorRules: readonly { selector: Hex; recipients: readonly Address[] }[] }[]]
-  if (!isScoped) return []
+  // Fail closed: any state that means "anyone can be paid" throws instead of returning [].
+  if (!isScoped) throw new AllowlistError('unrestricted: key has no call scopes (any call allowed).')
   const s = scopes.find((x) => getAddress(x.target) === getAddress(p.token))
-  const rule = s?.selectorRules.find((r) => r.selector.toLowerCase() === TRANSFER_WITH_MEMO_SELECTOR)
-  return (rule?.recipients ?? []).map((r) => getAddress(r))
+  if (!s) return []
+  if (s.selectorRules.length === 0) throw new AllowlistError('unrestricted: token scope has no selector rules (any function allowed).')
+  const rule = s.selectorRules.find((r) => r.selector.toLowerCase() === TRANSFER_WITH_MEMO_SELECTOR)
+  if (!rule) return []
+  if (rule.recipients.length === 0) throw new AllowlistError('unrestricted: transferWithMemo rule has an empty recipient list (any recipient allowed).')
+  return rule.recipients.map((r) => getAddress(r))
 }
 
 export async function readKey(client: ReadClient, account: Address, keyId: Address) {

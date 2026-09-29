@@ -34,7 +34,7 @@ export function publicClientFor(name: NetworkName) {
 
 /** Structural client types so any viem client (any chain generic) can be passed. */
 export type ReadClient = { readContract: (args: any) => Promise<any> }
-export type EstimateClient = { estimateGas: (args: any) => Promise<bigint> }
+export type EstimateClient = { chain?: { id: number } | null; estimateGas: (args: any) => Promise<bigint> }
 
 export const txUrl = (name: NetworkName, hash: Hex) => `${getNetwork(name).explorer}/tx/${hash}`
 export const addressUrl = (name: NetworkName, addr: Address) => `${getNetwork(name).explorer}/address/${addr}`
