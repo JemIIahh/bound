@@ -12,3 +12,7 @@ contracts/broadcast
 *.db
 *.db-journal
 .DS_Store
+
+# local agent worktrees
+.claude/
+.superpowers/
