@@ -27,7 +27,7 @@ export const VERDICTS: Record<Verdict, { label: string; tone: Tone; summary: str
 export function Badge({ tone, children }: { tone: Tone; children: ReactNode }) {
   const t = TONE[tone]
   return (
-    <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-[11px] uppercase tracking-[0.14em] ${t.badge}`}>
+    <span className={`inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border px-3 py-1 font-mono text-[11px] uppercase tracking-[0.14em] ${t.badge}`}>
       <span className={`inline-block h-1.5 w-1.5 rounded-full ${t.dot}`} />
       {children}
     </span>
