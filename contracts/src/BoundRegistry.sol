@@ -37,6 +37,8 @@ contract BoundRegistry {
     error UnknownPayee();
     error AlreadySuperseded();
     error PayeeRevoked_();
+    error DomainTaken();
+    error AlreadyVerified();
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
@@ -62,6 +64,8 @@ contract BoundRegistry {
     }
 
     function attest(address wallet, string calldata legalName, string calldata domain, string calldata lei, bytes4 masterId, uint8 level, bytes32 evidenceHash) external onlyAttester {
+        if (_payees[wallet].supersededAt != 0) revert AlreadySuperseded();
+        _requireDomainFree(domain, wallet);
         _write(wallet, legalName, domain, lei, masterId, level, evidenceHash, 0);
     }
 
@@ -70,6 +74,8 @@ contract BoundRegistry {
         if (old.verifiedAt == 0) revert UnknownPayee();
         if (old.supersededAt != 0) revert AlreadySuperseded();
         if (old.revokedAt != 0) revert PayeeRevoked_();
+        if (_payees[newWallet].verifiedAt != 0) revert AlreadyVerified();
+        _requireDomainFree(domain, oldWallet);
         uint64 activeFrom = uint64(block.timestamp) + COOLING_OFF;
         old.supersededAt = uint64(block.timestamp);
         old.successor = newWallet;
@@ -80,6 +86,7 @@ contract BoundRegistry {
     function revoke(address wallet, string calldata reason) external onlyAttester {
         Payee storage p = _payees[wallet];
         if (p.verifiedAt == 0) revert UnknownPayee();
+        if (p.revokedAt != 0) revert PayeeRevoked_();
         p.revokedAt = uint64(block.timestamp);
         _clearDomain(p.domain, wallet);
         emit PayeeRevoked(wallet, reason);
@@ -87,6 +94,11 @@ contract BoundRegistry {
 
     function getPayee(address wallet) external view returns (Payee memory) {
         return _payees[wallet];
+    }
+
+    function _requireDomainFree(string calldata domain, address allowedHolder) private view {
+        address holder = currentWalletForDomain[keccak256(bytes(domain))];
+        if (holder != address(0) && holder != allowedHolder) revert DomainTaken();
     }
 
     function _clearDomain(string memory domain, address wallet) private {

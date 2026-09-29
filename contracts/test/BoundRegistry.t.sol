@@ -126,4 +126,64 @@ contract BoundRegistryTest is Test {
         reg.setAttester(address(0xB0B));
         assertEq(reg.attester(), address(0xB0B));
     }
+
+    function test_attest_second_wallet_on_held_domain_reverts() public {
+        _attestAcme();
+        vm.prank(attester);
+        vm.expectRevert(BoundRegistry.DomainTaken.selector);
+        reg.attest(acme2, "Acme Ltd", "acme.com", "", bytes4(0), 1, bytes32(0));
+    }
+
+    function test_supersede_domain_held_by_third_wallet_reverts() public {
+        _attestAcme();
+        vm.startPrank(attester);
+        reg.attest(address(0xC0DE), "Other", "other.com", "", bytes4(0), 1, bytes32(0));
+        vm.expectRevert(BoundRegistry.DomainTaken.selector);
+        reg.supersede(acme, acme2, "Other", "other.com", "", bytes4(0), 1, bytes32(0));
+        vm.stopPrank();
+    }
+
+    function test_supersede_into_verified_wallet_reverts() public {
+        _attestAcme();
+        vm.startPrank(attester);
+        reg.attest(acme2, "Other", "other.com", "", bytes4(0), 1, bytes32(0));
+        vm.expectRevert(BoundRegistry.AlreadyVerified.selector);
+        reg.supersede(acme, acme2, "Acme Ltd", "acme.com", "", bytes4(0), 1, bytes32(0));
+        vm.stopPrank();
+    }
+
+    function test_self_supersede_reverts() public {
+        _attestAcme();
+        vm.prank(attester);
+        vm.expectRevert(BoundRegistry.AlreadyVerified.selector);
+        reg.supersede(acme, acme, "Acme Ltd", "acme.com", "", bytes4(0), 1, bytes32(0));
+    }
+
+    function test_second_revoke_reverts() public {
+        _attestAcme();
+        vm.startPrank(attester);
+        reg.revoke(acme, "x");
+        vm.expectRevert(BoundRegistry.PayeeRevoked_.selector);
+        reg.revoke(acme, "y");
+        vm.stopPrank();
+    }
+
+    function test_revoke_old_after_supersede_keeps_successor_current() public {
+        _attestAcme();
+        vm.startPrank(attester);
+        reg.supersede(acme, acme2, "Acme Ltd", "acme.com", "", bytes4(0), 1, bytes32(0));
+        reg.revoke(acme, "old key");
+        vm.stopPrank();
+        assertEq(reg.currentWalletForDomain(keccak256("acme.com")), acme2);
+    }
+
+    function test_reattest_new_wallet_in_cooling_off_keeps_activeFrom() public {
+        _attestAcme();
+        vm.startPrank(attester);
+        reg.supersede(acme, acme2, "Acme Ltd", "acme.com", "", bytes4(0), 1, bytes32(0));
+        vm.warp(1_800_000_100);
+        reg.attest(acme2, "Acme Ltd", "acme.com", "5493001KJTIIGC8Y1R12", bytes4(0), 2, bytes32(0));
+        vm.stopPrank();
+        assertEq(reg.getPayee(acme2).activeFrom, 1_800_000_000 + 72 hours);
+    }
 }
