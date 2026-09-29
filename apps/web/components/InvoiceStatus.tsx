@@ -9,7 +9,7 @@ export const INVOICE_STATUS: Record<InvoiceStatus, { label: string; tone: Tone; 
   over_limit: { label: 'Over limit', tone: 'amber', note: "Over the agent's spending limit — pay manually or raise the limit." },
   paid: { label: 'Paid', tone: 'green' },
   blocked: { label: 'Blocked', tone: 'red' },
-  failed: { label: 'Failed', tone: 'grey', note: 'The agent stopped without a decision. Open the log for details.' },
+  failed: { label: 'Failed', tone: 'grey', note: 'Not paid. Open the log for details.' },
   unconfirmed: { label: 'Awaiting confirmation', tone: 'amber', note: 'Sent, awaiting confirmation on Tempo.' },
 }
 

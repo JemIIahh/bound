@@ -146,7 +146,7 @@ export function Lab({ orgId }: { orgId: string }) {
                 id="labText"
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                rows={11}
+                rows={14}
                 placeholder="From: …&#10;Invoice …&#10;Pay to (Tempo): 0x…"
                 className={`${fieldClass} resize-y text-[13px] leading-relaxed`}
               />
@@ -330,7 +330,7 @@ function RunResult({ orgId, invoiceId, meta }: { orgId: string; invoiceId: strin
       <div className="mt-6 border-t border-black/10 pt-5">
         <span className={sectionLabel}>Agent log</span>
         <div className="mt-4">
-          {d && !d.agentLog.length && !live ? <p className="text-sm text-graphite">The agent logged nothing for this run.</p> : <AgentLog entries={d?.agentLog ?? []} live={live} />}
+          {d && !d.agentLog.length && !live ? <p className="text-sm text-graphite">The agent logged nothing for this run.</p> : <AgentLog entries={d?.agentLog ?? []} />}
         </div>
       </div>
       <p className="mt-5 border-t border-black/10 pt-4 font-mono text-[11px] text-graphite">{invoiceId}</p>
@@ -342,7 +342,7 @@ function Working() {
   return (
     <p className="flex items-center gap-3 font-display text-xl tracking-[-0.01em] text-ink">
       <span className="live-dot inline-block h-1.5 w-1.5 rounded-full bg-ink" />
-      The agent is reading the invoice…
+      The agent is working…
     </p>
   )
 }
@@ -391,7 +391,7 @@ function OutcomeView({ out, d, orgId }: { out: Outcome; d: InvoiceDetail; orgId:
             <Badge tone="grey">Not sent</Badge>
           </div>
           <p className={headline}>Not sent — the lab only fires payments Tempo will refuse.</p>
-          <p className="text-sm leading-relaxed text-graphite">This wallet is one the agent key may pay, so the lab kept the payment to itself.</p>
+          <p className="text-sm leading-relaxed text-graphite">Tempo would or might have accepted this payment, so the lab didn&apos;t send it. No money moved.</p>
         </div>
       )
     case 'unconfirmed':

@@ -590,7 +590,7 @@ async function runPayer(width) {
 
   if (width === 1280) {
     f.st.hold = true
-    await labRun('Changed wallet (lookalike)', 'changed', 'lab-running', 'Agent working…')
+    await labRun('Changed wallet (lookalike)', 'changed', 'lab-running', 'verify_payee')
     f.st.hold = false
     await labRun('Real Acme invoice', 'paid', 'lab-paid', 'Paid $12.50 to Acme Ltd.')
     await labRun('Injected + guard off', 'notSent', 'lab-not-sent', 'Not sent — the lab only fires payments Tempo will refuse.', { run: 'Run with the guard off' })
