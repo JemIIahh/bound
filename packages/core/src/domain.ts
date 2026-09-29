@@ -7,7 +7,8 @@ const LABEL_NOISE = new Set(['ltd', 'llc', 'inc', 'plc', 'co', 'group', 'hq', 'p
 export function normalizeDomain(raw: string): string {
   let d = raw.trim().toLowerCase()
   if (d.includes('@')) d = d.slice(d.lastIndexOf('@') + 1)
-  d = d.replace(/^[a-z]+:\/\//, '').replace(/[/?#].*$/, '').replace(/^www\./, '').replace(/\.$/, '')
+  // Strip every leading "www." so the result is a fixed point (normalizeDomain(normalizeDomain(x)) === normalizeDomain(x)).
+  d = d.replace(/^[a-z]+:\/\//, '').replace(/[/?#].*$/, '').replace(/^(www\.)+/, '').replace(/\.$/, '')
   return d
 }
 
