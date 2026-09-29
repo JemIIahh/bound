@@ -24,8 +24,8 @@
     "better-sqlite3": "^11.5.0",
     "drizzle-orm": "^0.36.0",
     "dotenv": "^16.4.0",
-    "@anthropic-ai/sdk": "latest",
-    "@modelcontextprotocol/sdk": "latest",
+    "@anthropic-ai/sdk": "^0.129.0",
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "tsx": "^4.19.0"
   },
   "devDependencies": {

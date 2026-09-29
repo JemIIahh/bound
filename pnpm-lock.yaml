@@ -11,13 +11,13 @@ importers:
   apps/server:
     dependencies:
       '@anthropic-ai/sdk':
-        specifier: latest
+        specifier: ^0.129.0
         version: 0.129.0(zod@3.25.76)
       '@bound/core':
         specifier: workspace:*
         version: link:../../packages/core
       '@modelcontextprotocol/sdk':
-        specifier: latest
+        specifier: ^1.31.0
         version: 1.31.0(zod@3.25.76)
       better-sqlite3:
         specifier: ^11.5.0
