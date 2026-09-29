@@ -146,13 +146,12 @@ New wallet verified → `supersede(old, new)` → new wallet enters a **72h cool
 - DNS alone is weak (lookalike domains) → level 2 (LEI) outranks it; the resolver flags lookalike domains.
 - Sanctions/KYT screening: out of scope (complementary to Chainalysis/TRM).
 
-## 5. MCP tools and SDK
-- `verify_payee(address, payeeName, senderDomain?)` → verdict (read-only; usable by any agent).
-- `request_payee_approval(invoiceId)` → creates an approval request.
-- `pay_invoice(invoiceId)` → server-side policy check + preflight + pay with the org's access key. The key never leaves the server; the chain limits what it can do even if the server is compromised.
-- `get_payment_status(invoiceId)`.
-- SDK mirrors `verify_payee` and exposes `buildAllowlistUpdate()` so wallets can reuse the approval pattern.
-- Agent: Claude Agent SDK (TypeScript) with Bound's MCP. Model: current Claude Sonnet (confirm the exact ID via the claude-api skill at implementation time).
+## 5. MCP tools, agent tools and SDK
+- **Public MCP endpoint (`/mcp`, read-only, any agent):** `verify_payee(address, payeeName, senderDomain?)` → verdict + reasons; `lookup_payee(query)` → verified companies.
+- **Reference agent's in-process tools** (org-scoped; never exposed publicly): `record_invoice_fields`, `verify_payee`, `pay_invoice` (server re-runs the policy, preflights and pays with the org's access key — the key never leaves the server, and the chain limits it even if the server is compromised), `request_payee_approval`, `report_blocked`. Lab guard-off mode swaps these for `record_invoice_fields` + `raw_transfer`.
+- **Org actions** (create org, approvals, invoices) use the authenticated REST API.
+- **SDK** (`@bound/sdk`): `BoundClient.verifyPayee()`, plus the allowlist helpers (`readAllowlist`, `withRecipient`, `buildSetAllowlistCall`) so any wallet can reuse the approval pattern.
+- **Agent implementation:** Anthropic TypeScript SDK tool runner inside the server; model `claude-opus-5-5` at low effort with server-side refusal fallbacks enabled.
 
 ## 6. Dashboard (thin UI — founder restyles later)
 - `/` landing — the pitch in one screen.
