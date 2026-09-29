@@ -13,6 +13,8 @@ const schema = z.object({
   PORT: z.coerce.number().default(8787),
   WEB_ORIGIN: z.string().default('http://localhost:3000'),
   DEMO_ROOT_PRIVATE_KEY: z.string().optional().transform((v) => (v ? (v as `0x${string}`) : undefined)),
+  // When set, POST /v1/orgs/:orgId/authorize-demo only signs for this org (the seeded demo org).
+  DEMO_ORG_ID: z.string().optional().transform((v) => (v?.trim() ? v.trim() : undefined)),
   // Attack lab (guard-off demo). Always on for testnet; on mainnet only when explicitly enabled.
   LAB_ENABLED: z.enum(['true', 'false', '']).optional().transform((v) => v === 'true'),
 })
@@ -30,6 +32,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     port: e.PORT,
     webOrigin: e.WEB_ORIGIN,
     demoRootKey: e.DEMO_ROOT_PRIVATE_KEY,
+    demoOrgId: e.DEMO_ORG_ID,
     labEnabled: e.LAB_ENABLED,
   }
 }

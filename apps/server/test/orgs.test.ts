@@ -10,6 +10,7 @@ import { approvals, invoices, orgs, payments } from '../src/db/schema'
 import { createApp, finalize } from '../src/app'
 import { orgsRouter } from '../src/routes/orgs'
 import { decryptSecret, sha256 } from '../src/crypto'
+import { loadConfig } from '../src/config'
 
 const root = '0x3333333333333333333333333333333333333333'
 const token = '0x20c0000000000000000000000000000000000000'
@@ -28,7 +29,7 @@ function setup(config: Record<string, unknown> = {}) {
   }
   const deps = { db, chain: { network: 'testnet', token } as any, config: { webOrigin: '*', serverSecret: secret, ...config } as any, ops } as any
   const app = createApp(deps); app.use('/v1', orgsRouter(deps)); finalize(app)
-  return { db, ops, app }
+  return { db, ops, app, deps }
 }
 
 async function create(app: any, rootAddress = root) {
@@ -191,6 +192,44 @@ describe('authorization', () => {
     const { app } = setup()
     const { org, token: t } = (await create(app)).body
     expect((await request(app).post(`/v1/orgs/${org.id}/authorize-demo`).set('authorization', `Bearer ${t}`)).status).toBe(404)
+  })
+  test('with DEMO_ORG_ID set, only that org may be demo-authorized (403 for any other demo-root org)', async () => {
+    const demoKey = generatePrivateKey()
+    const demoRoot = privateKeyToAddress(demoKey)
+    const { app, ops, deps } = setup({ demoRootKey: demoKey, demoOrgId: 'org_seeded' })
+    const squat = (await request(app).post('/v1/orgs').send({ name: 'Squatter', rootAddress: demoRoot, limitUsd: '50', periodSeconds: 60 })).body
+    const res = await request(app).post(`/v1/orgs/${squat.org.id}/authorize-demo`).set('authorization', `Bearer ${squat.token}`)
+    expect(res.status).toBe(403)
+    expect(ops.sendDemoRoot).not.toHaveBeenCalled()
+    deps.config.demoOrgId = squat.org.id // now it IS the configured demo org
+    const ok = await request(app).post(`/v1/orgs/${squat.org.id}/authorize-demo`).set('authorization', `Bearer ${squat.token}`)
+    expect(ok.status).toBe(200)
+    expect(ops.sendDemoRoot).toHaveBeenCalledOnce()
+  })
+  test('DEMO_ORG_ID is an optional config string', () => {
+    const env = { BOUND_REGISTRY_ADDRESS: '0x00', ATTESTER_PRIVATE_KEY: '0x01', SERVER_SECRET: '0x' + '11'.repeat(32) }
+    expect(loadConfig(env).demoOrgId).toBeUndefined()
+    expect(loadConfig({ ...env, DEMO_ORG_ID: '' }).demoOrgId).toBeUndefined()
+    expect(loadConfig({ ...env, DEMO_ORG_ID: 'org_abc' }).demoOrgId).toBe('org_abc')
+  })
+})
+
+describe('rate limits on org creation and demo authorization', () => {
+  test('POST /v1/orgs allows 5 per minute per IP, then 429', async () => {
+    const { app } = setup()
+    for (let i = 0; i < 5; i++) expect((await create(app)).status).toBe(201)
+    const res = await create(app)
+    expect(res.status).toBe(429)
+    expect(res.headers['retry-after']).toBeDefined()
+  })
+  test('POST /v1/orgs/:orgId/authorize-demo allows 5 per minute per IP, then 429', async () => {
+    const demoKey = generatePrivateKey()
+    const { app, ops } = setup({ demoRootKey: demoKey })
+    const mine = (await request(app).post('/v1/orgs').send({ name: 'Demo', rootAddress: privateKeyToAddress(demoKey), limitUsd: '50', periodSeconds: 60 })).body
+    const hit = () => request(app).post(`/v1/orgs/${mine.org.id}/authorize-demo`).set('authorization', `Bearer ${mine.token}`)
+    for (let i = 0; i < 5; i++) expect((await hit()).status).toBe(200)
+    expect((await hit()).status).toBe(429)
+    expect(ops.sendDemoRoot).toHaveBeenCalledOnce()
   })
 })
 

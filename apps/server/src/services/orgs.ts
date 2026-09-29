@@ -85,11 +85,17 @@ export async function confirmAuthorization(deps: ServiceDeps, orgId: string, txH
   return { authorized: true as const }
 }
 
-/** Demo only: when DEMO_ROOT_PRIVATE_KEY controls this org's root (and its limit is ≤ 50 USD), sign the authorization server-side. */
+/**
+ * Demo only: when DEMO_ROOT_PRIVATE_KEY controls this org's root (and its limit is ≤ 50 USD), sign the authorization
+ * server-side. With DEMO_ORG_ID set, only that org qualifies.
+ */
 export async function authorizeDemo(deps: ServiceDeps, orgId: string) {
   const org = loadOrg(deps, orgId)
   const demoRoot = demoRootAddress(deps)
   if (!demoRoot) throw new HttpError(404, 'Demo authorization is not enabled')
+  // DEMO_ORG_ID pins the server-side demo signer to the seeded demo org: nobody can create another
+  // org with the demo root and make the demo key sign (and pay fees) for it.
+  if (deps.config.demoOrgId && org.id !== deps.config.demoOrgId) throw new HttpError(403, 'This org is not the demo org')
   const root = getAddress(org.rootAddress)
   if (demoRoot !== root) throw new HttpError(403, 'This org\'s root is not the demo account')
   if (BigInt(org.limitBase) > DEMO_MAX_LIMIT_BASE) throw new HttpError(403, 'Demo orgs are limited to 50 USD per period')

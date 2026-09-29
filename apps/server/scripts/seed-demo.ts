@@ -74,7 +74,8 @@ if (!existing || !token) {
 } else {
   console.log(`org ${orgId} already exists`)
 }
-const auth = await authorizeDemo(deps, orgId!)
+// the seed decides which org is the demo org (a DEMO_ORG_ID loaded from a previous seed may be stale)
+const auth = await authorizeDemo({ ...deps, config: { ...config, demoOrgId: orgId! } }, orgId!)
 const org = db.select().from(orgs).where(eq(orgs.id, orgId!)).get()!
 if (!auth.authorized || !org.authorized) die('agent key authorization did not confirm')
 setEnv(SERVER_ENV, { DEMO_ORG_AUTHORIZE_TX: org.authorizeTx ?? '' })
