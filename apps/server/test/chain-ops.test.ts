@@ -3,10 +3,10 @@ import { generatePrivateKey } from 'viem/accounts'
 
 vi.mock('@bound/core', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@bound/core')>()
-  return { ...actual, payWithKey: vi.fn() }
+  return { ...actual, payWithKey: vi.fn(), forceSendWithKey: vi.fn() }
 })
 
-import { payWithKey, PaymentOutcomeUnknown, PaymentRejected } from '@bound/core'
+import { forceSendWithKey, payWithKey, PaymentOutcomeUnknown, PaymentRejected } from '@bound/core'
 import { createDb, migrate } from '../src/db/client'
 import { orgs } from '../src/db/schema'
 import { encryptSecret } from '../src/crypto'
@@ -17,6 +17,7 @@ const root = '0x3333333333333333333333333333333333333333'
 const to = '0x5555555555555555555555555555555555555555'
 const HASH = ('0x' + 'cd'.repeat(32)) as `0x${string}`
 const pay = vi.mocked(payWithKey)
+const forced = vi.mocked(forceSendWithKey)
 
 function opsWith(pub: any = {}) {
   const db = createDb(':memory:'); migrate(db)
@@ -25,7 +26,7 @@ function opsWith(pub: any = {}) {
 }
 const send = (ops: ReturnType<typeof opsWith>, force = false) => ops.send({ orgId: 'o', to, amount: 1n, memo: '0x00', force })
 
-beforeEach(() => pay.mockReset())
+beforeEach(() => { pay.mockReset(); forced.mockReset() })
 
 describe('production send', () => {
   test('success is success', async () => {
@@ -52,9 +53,15 @@ describe('production send', () => {
     pay.mockRejectedValueOnce(odd)
     await expect(send(opsWith())).rejects.toBe(odd)
   })
-  test('force skips estimation with a fixed gas limit', async () => {
-    pay.mockResolvedValueOnce({ txHash: HASH, receiptTxHash: HASH, status: 'success' })
-    await send(opsWith(), true)
-    expect(pay.mock.calls[0]![0]).toMatchObject({ gas: 1_000_000n, to, amount: 1n })
+  test('force (lab guard-off) sends with no simulation via forceSendWithKey, never payWithKey', async () => {
+    forced.mockResolvedValueOnce({ txHash: HASH, receiptTxHash: HASH, status: 'reverted' })
+    const r = await send(opsWith({ getTransactionReceipt: async () => ({ status: 'reverted' }) }), true)
+    expect(r).toEqual({ txHash: HASH, status: 'reverted' })
+    expect(forced.mock.calls[0]![0]).toMatchObject({ to, amount: 1n })
+    expect(pay).not.toHaveBeenCalled()
+  })
+  test('a forced send rejected before broadcast is "not sent"', async () => {
+    forced.mockRejectedValueOnce(new PaymentRejected('Other', 'nonce fetch failed'))
+    await expect(send(opsWith(), true)).rejects.toBeInstanceOf(PaymentNotSent)
   })
 })

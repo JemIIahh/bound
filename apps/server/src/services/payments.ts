@@ -5,7 +5,7 @@ import {
 import { Abis, Account } from 'viem/tempo'
 import { and, eq, inArray, ne, notInArray } from 'drizzle-orm'
 import {
-  agentAccount, getNetwork, isVirtualAddress, KEYCHAIN, memoFromInvoice, payWithKey, PaymentOutcomeUnknown, PaymentRejected,
+  agentAccount, forceSendWithKey, getNetwork, isVirtualAddress, KEYCHAIN, memoFromInvoice, payWithKey, PaymentOutcomeUnknown, PaymentRejected,
   preflightPay, readAllowlist, readKey, readPayee, resolveRecipient, type OnchainPayee,
 } from '@bound/core'
 import type { AppDeps } from '../app'
@@ -26,6 +26,8 @@ export type ChainOps = {
   /**
    * Throws PaymentNotSent when nothing was broadcast. Any other throw means the outcome is unknown;
    * if the error carries `txHash` (PaymentOutcomeUnknown) it identifies the possibly-broadcast tx.
+   * `force` is for the attack lab's "guard off" only: broadcast with no simulation (core forceSendWithKey),
+   * so Tempo, not Bound, decides; a keychain violation is mined and reverts.
    */
   send: (p: { orgId: string; to: Address; amount: bigint; memo: Hex; force?: boolean }) => Promise<{ txHash: Hex; status: 'success' | 'reverted' }>
   waitReceipt: (hash: Hex) => Promise<{ status: 'success' | 'reverted' }>
@@ -315,8 +317,6 @@ export function mapSendError(e: unknown): Error {
   return e instanceof Error ? e : new Error(String(e))
 }
 
-/** Gas used for lab "guard off" sends so estimation (which would refuse) is skipped. */
-const FORCE_GAS = 1_000_000n
 /** How far back findPaymentByMemo scans for the org's TransferWithMemo logs. */
 const MEMO_LOOKBACK = 20_000n
 
@@ -365,7 +365,9 @@ export function productionChainOps(deps: AppDeps): ChainOps {
       }
       let r: Awaited<ReturnType<typeof payWithKey>>
       try {
-        r = await payWithKey({ network: chain.network, account, token, to: p.to, amount: p.amount, memo: p.memo, ...(p.force ? { gas: FORCE_GAS } : {}) })
+        const args = { network: chain.network, account, token, to: p.to, amount: p.amount, memo: p.memo }
+        // force (attack lab "guard off" only): no simulation at all, so a keychain violation is mined and reverts onchain
+        r = p.force ? await forceSendWithKey(args) : await payWithKey(args)
       } catch (e) {
         throw mapSendError(e)
       }
