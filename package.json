@@ -1,0 +1,13 @@
+{
+  "name": "bound",
+  "private": true,
+  "packageManager": "pnpm@10.26.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "pnpm -r --if-present test",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "dev:server": "pnpm --filter @bound/server dev",
+    "dev:web": "pnpm --filter @bound/web dev"
+  },
+  "pnpm": { "onlyBuiltDependencies": ["better-sqlite3", "esbuild"] }
+}
