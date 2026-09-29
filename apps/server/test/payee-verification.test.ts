@@ -10,6 +10,7 @@ import { payeesRouter } from '../src/routes/payees'
 import { productionPayeeServices } from '../src/services/payee-verification'
 import { SerialJobQueue } from '../src/services/mining-queue'
 import { resolveTxt } from '../src/services/dns'
+import { verifyPayee } from '../src/services/verify-service'
 
 type Mined = { salt: Hex; masterId: Hex }
 const MINED: Mined = { salt: ('0x' + '00'.repeat(28) + 'abf52baf') as Hex, masterId: '0x83196cf2' }
@@ -464,6 +465,15 @@ describe('productionPayeeServices.writeAttestation (BoundRegistry guards)', () =
     const h = harness({ status: 'reverted' })
     await expect(h.services.writeAttestation(h.row, 1)).rejects.toThrow(/reverted/)
   })
+
+  test('a verified wallet re-attested to a different (unheld) domain → 409, no tx: it would carry its old registry age to the new domain', async () => {
+    const h = harness({ payees: { [wallet.toLowerCase()]: livePayee('throwaway.io') } })
+    const err = await h.services.writeAttestation(h.row, 1).catch((e) => e)
+    expect(err).toBeInstanceOf(HttpError)
+    expect(err.status).toBe(409)
+    expect(err.message).toBe('This wallet is already verified for another domain — use a new wallet to change domains')
+    expect(h.writeContractSync).not.toHaveBeenCalled()
+  })
 })
 
 describe('registry name-squatting guard on /attest', () => {
@@ -503,7 +513,8 @@ describe('registry name-squatting guard on /attest', () => {
     expect(services.writeAttestation).toHaveBeenCalledOnce()
   })
   test('superseded or revoked holders of the name, the same domain (supersede) and the same wallet do not block', async () => {
-    for (const over of [{ supersededAt: 5 }, { revokedAt: 5 }, { domain: 'acme-ltd.co' }, { wallet: squatter }]) {
+    // same wallet = a re-attest of its own domain (a same wallet at ANOTHER domain is refused by the wallet re-pointing guard)
+    for (const over of [{ supersededAt: 5 }, { revokedAt: 5 }, { domain: 'acme-ltd.co' }, { wallet: squatter, domain: 'acme-ltd.co' }]) {
       const { db, services, attest } = ready()
       db.insert(payees).values(registryRow(over)).run()
       expect((await attest()).status).toBe(200)
@@ -553,7 +564,8 @@ describe('LEI reuse guard on /check-lei and /attest', () => {
     expect(services.writeAttestation).not.toHaveBeenCalled()
   })
   test('superseded or revoked holders, the same wallet (re-attest) and the same domain (rotation) do not block', async () => {
-    for (const over of [{ supersededAt: 5 }, { revokedAt: 5 }, { wallet: claimant }, { domain: 'acme-ltd.co' }]) {
+    // same wallet = a re-attest of its own domain (a same wallet at ANOTHER domain is refused by the wallet re-pointing guard)
+    for (const over of [{ supersededAt: 5 }, { revokedAt: 5 }, { wallet: claimant, domain: 'acme-ltd.co' }, { domain: 'acme-ltd.co' }]) {
       const a = ready()
       a.db.insert(payees).values(registryRow(over)).run()
       const l = await a.checkLei()
@@ -569,6 +581,66 @@ describe('LEI reuse guard on /check-lei and /attest', () => {
     const { db, checkLei } = ready()
     db.insert(payees).values(registryRow({ lei: '529900T8BM49AURSDO55' })).run()
     expect((await checkLei()).status).toBe(200)
+  })
+})
+
+describe('wallet re-pointing guard on /attest', () => {
+  const W = '0x' + '77'.repeat(20)
+  const acmeWallet = '0xCcB7f43C7D6DBbC4e545d8C01761098da5332ED2'
+  const WALLET_TAKEN = 'This wallet is already verified for another domain — use a new wallet to change domains'
+  const registryRow = (over: Partial<typeof payees.$inferInsert> = {}) =>
+    ({ wallet: W, legalName: 'Throwaway Co', domain: 'throwaway.io', lei: '', masterId: '0x00000000', level: 1, activeFrom: 100, evidenceHash: '0x00', updatedBlock: 1, ...over })
+  /** A signed + DNS-proven verification of wallet W, inserted directly, with its DNS proof still published. */
+  function ready(over: Partial<typeof payeeVerifications.$inferInsert> = {}) {
+    const { app, db, services } = setup()
+    db.insert(payeeVerifications).values({ id: 'pv_w', wallet: W, legalName: 'Throwaway Co', domain: 'acme-ltd.co', nonce: 'nonce1', sigVerified: 1, dnsVerified: 1, createdAt: 1, ...over }).run()
+    services.resolveTxt.mockResolvedValue(['bound-verify=nonce1'])
+    return { app, db, services, attest: () => request(app).post('/v1/payee-verifications/pv_w/attest') }
+  }
+
+  test('re-attesting a current verified wallet to a different domain is 409 and sends no tx', async () => {
+    const { db, services, attest } = ready()
+    db.insert(payees).values(registryRow()).run()
+    const r = await attest()
+    expect(r.status).toBe(409)
+    expect(r.body.error).toBe(WALLET_TAKEN)
+    expect(services.writeAttestation).not.toHaveBeenCalled()
+  })
+  test('a same-domain re-attest (level 1 → 2 upgrade) still attests', async () => {
+    const { db, services, attest } = ready({ domain: 'throwaway.io', lei: '5493001KJTIIGC8Y1R12', leiVerified: 1 })
+    db.insert(payees).values(registryRow()).run()
+    const r = await attest()
+    expect(r.status).toBe(200)
+    expect(r.body.level).toBe(2)
+    expect(services.writeAttestation).toHaveBeenCalledOnce()
+  })
+  test('a superseded or revoked record of the wallet does not trigger this guard (the registry refuses those itself)', async () => {
+    for (const over of [{ supersededAt: 5 }, { revokedAt: 5 }]) {
+      const { db, services, attest } = ready()
+      db.insert(payees).values(registryRow(over)).run()
+      expect((await attest()).status).toBe(200)
+      expect(services.writeAttestation).toHaveBeenCalledOnce()
+    }
+  })
+  test('regression: an early wallet re-pointed to a lookalike domain cannot inherit its age and MATCH', async () => {
+    // attacker verifies W with a throwaway domain at t=100; the real Acme registers acme.com at t=1000;
+    // the attacker then DNS-proves acme-ltd.co and tries to re-attest W to it
+    const { db, services, attest } = ready({ legalName: 'Acme Ltd', leiVerified: 1, lei: '5493001KJTIIGC8Y1R12' })
+    db.insert(payees).values(registryRow({ legalName: 'Acme Ltd' })).run()
+    db.insert(payees).values(registryRow({ wallet: acmeWallet, legalName: 'Acme Ltd', domain: 'acme.com', activeFrom: 1000 })).run()
+    const r = await attest()
+    expect(r.status).toBe(409)
+    expect(r.body.error).toBe(WALLET_TAKEN)
+    expect(services.writeAttestation).not.toHaveBeenCalled()
+
+    // the registry is unchanged, so an invoice for W from acme-ltd.co is flagged and the real Acme still MATCHes
+    const ops = { resolveRecipient: vi.fn(async (to: any) => ({ effective: to, isVirtual: false, masterId: null, registered: true })), readPayee: vi.fn(async () => null) }
+    const deps = { db, chain: {} as any, config: {} as any, ops } as any
+    const squat = await verifyPayee(deps, { address: W as Address, payeeName: 'Acme Ltd', senderDomain: 'acme-ltd.co' })
+    expect(squat.verdict).not.toBe('MATCH')
+    expect(squat.reasons.map((x) => x.code)).toContain('lookalike_domain')
+    const real = await verifyPayee(deps, { address: acmeWallet as Address, payeeName: 'Acme Ltd', senderDomain: 'acme.com' })
+    expect(real.verdict).toBe('MATCH')
   })
 })
 

@@ -6,7 +6,10 @@ import { compareNames, normalizeDomain, normalizeName } from '@bound/core'
 import { HttpError, type AppDeps } from '../app'
 import { newId, newToken } from '../crypto'
 import { payees, payeeVerifications } from '../db/schema'
-import { productionPayeeServices, registeredLeiHolder, registeredNameHolder, type PayeeServices, type PayeeVerificationRow } from '../services/payee-verification'
+import {
+  productionPayeeServices, registeredLeiHolder, registeredNameHolder, WALLET_OTHER_DOMAIN, walletVerifiedForOtherDomain,
+  type PayeeServices, type PayeeVerificationRow,
+} from '../services/payee-verification'
 import { processMiningQueue, type SerialJobQueue } from '../services/mining-queue'
 import { perIpLimit } from '../rate-limit'
 
@@ -194,6 +197,8 @@ export function payeesRouter(
   r.post('/payee-verifications/:id/attest', async (req, res) => {
     const row = loadOpen(req.params.id)
     if (!row.sigVerified || !row.dnsVerified) throw new HttpError(409, 'Signature and DNS proof required')
+    // A re-attest keeps the wallet's registry age, so a verified wallet may not move to another domain.
+    if (walletVerifiedForOtherDomain(db, row)) throw new HttpError(409, WALLET_OTHER_DOMAIN)
     // A verified LEI is written to the registry and lifts the name check below: re-check it is still unclaimed.
     if (row.leiVerified && registeredLeiHolder(db, row)) throw new HttpError(409, LEI_TAKEN)
     // Wallet + DNS proofs do not stop a second company from claiming a name already in the registry.
