@@ -7,7 +7,14 @@ describe('normalizeDomain', () => {
     ['https://www.Acme.com/pay', 'acme.com'],
     ['ACME.COM.', 'acme.com'],
     ['billing@acme.com', 'acme.com'],
+    ['www.www.victim.com', 'victim.com'],
+    ['https://WWW.www.www.Acme.com/pay', 'acme.com'],
   ])('%s -> %s', (raw, expected) => { expect(normalizeDomain(raw)).toBe(expected) })
+
+  test.each(['www.www.acme.com', 'https://www.Acme.com/pay', 'ACME.COM.', 'billing@www.www.acme.com', 'www.acme.com.'])(
+    'is idempotent for %s',
+    (raw) => { const once = normalizeDomain(raw); expect(normalizeDomain(once)).toBe(once) },
+  )
 })
 
 describe('isLookalikeDomain', () => {
