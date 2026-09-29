@@ -169,7 +169,7 @@ export function Lab({ orgId }: { orgId: string }) {
       </div>
 
       <section className="min-w-0 lg:col-start-1 lg:row-start-2" aria-labelledby="runs-label">
-        <span id="runs-label" className={sectionLabel}>
+        <span id="runs-label" className={`block ${sectionLabel}`}>
           Runs
         </span>
         {labRuns.length === 0 ? (
@@ -308,10 +308,8 @@ function RunResult({ orgId, invoiceId, meta }: { orgId: string; invoiceId: strin
         <span id="result-label" className={sectionLabel}>
           Result
         </span>
-        <span className="font-mono text-[11px] text-graphite">{[p?.title, meta?.guardOff ? 'Guard off' : 'Guard on'].filter(Boolean).join(' · ')}</span>
+        <span className="font-mono text-[11px] text-graphite">{[p?.title ?? d?.invoiceNo, meta?.guardOff && p?.key !== 'injected' ? 'Guard off' : null].filter(Boolean).join(' · ')}</span>
       </div>
-
-      {p && <p className={`mt-2 ${hint}`}>{p.about}</p>}
 
       <div className="mt-5 border-t border-black/10 pt-5">{d ? <OutcomeView out={out} d={d} orgId={orgId} /> : <Working />}</div>
       {error && <p className={`mt-3 ${errorText}`}>{error}</p>}

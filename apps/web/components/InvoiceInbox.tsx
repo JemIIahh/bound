@@ -75,7 +75,7 @@ export function InvoiceInbox({
 
   return (
     <section className={card} aria-labelledby="invoices-label">
-      <span id="invoices-label" className={sectionLabel}>
+      <span id="invoices-label" className={`block ${sectionLabel}`}>
         Invoices
       </span>
       <form onSubmit={submit} className="mt-4 flex flex-col gap-3" noValidate>
@@ -228,9 +228,8 @@ function InvoiceLog({ orgId, invoiceId, status }: { orgId: string; invoiceId: st
   return (
     <div className="mb-4 flex flex-col gap-4 border-t border-dashed border-black/10 pt-4 sm:pl-4">
       {detail?.verdict && (
-        <div className="flex flex-wrap items-center gap-3">
+        <div>
           <VerdictBadge verdict={detail.verdict.verdict} />
-          <span className="text-xs text-graphite">{VERDICTS[detail.verdict.verdict]?.summary}</span>
         </div>
       )}
       <span className={sectionLabel}>Agent log</span>

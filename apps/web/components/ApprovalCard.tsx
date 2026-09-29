@@ -229,6 +229,7 @@ export function ApprovalCard({
 function Outcome({ result, txHash, onDismiss }: { result: { kind: 'approved'; payment: PayResult } | { kind: 'rejected' }; txHash: Hex | null; onDismiss: () => void }) {
   let text: string
   let payTx: Hex | undefined
+  const dot = result.kind === 'rejected' ? 'bg-graphite' : result.payment.status === 'paid' ? 'bg-emerald-600' : 'bg-amber-500'
   if (result.kind === 'rejected') text = "Rejected. The agent won't pay this invoice."
   else if (result.payment.status === 'paid') {
     text = 'Approved and paid.'
@@ -238,7 +239,10 @@ function Outcome({ result, txHash, onDismiss }: { result: { kind: 'approved'; pa
 
   return (
     <div className="mt-5 flex flex-col gap-3 border-t border-black/10 pt-5">
-      <p className="text-sm text-ink">{text}</p>
+      <p className="flex items-start gap-2.5 text-sm text-ink">
+        <span className={`mt-[7px] inline-block h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
+        {text}
+      </p>
       <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-graphite">
         {txHash && (
           <a href={txUrl(txHash)} target="_blank" rel="noreferrer" className="underline decoration-black/30 underline-offset-4 hover:text-ink">

@@ -7,11 +7,21 @@
 // the live API up to the DNS check. States the local API can't reach (LEI, mining, registration, publish)
 // and /v1/verify verdicts are served from fixtures with page.route. PROFILE_WALLET must exist in the
 // server's payees mirror for the profile shot.
+//
+// Payer suite (Task 13): SUITES=payer runs only the dashboard/lab shots. Org setup, the unauthorized dashboard, a
+// live invoice and a live lab run go to the real local API (the agent fails without ANTHROPIC_API_KEY, and that
+// failure is what's shown). With LIVE_ROOT_KEY (a funded Tempo testnet key, never mainnet) the fake wallet really
+// signs and sends the authorize transaction on testnet. Agent-dependent states (approvals, verdicts, events, lab
+// results) come from scripts/payer-fixtures.mjs via page.route; each report entry says live or fixture.
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { chromium } from 'playwright'
+import { createClient, http, publicActions, walletActions } from 'viem'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
+import { tempoModerato } from 'viem/chains'
+import { Account } from 'viem/tempo'
+import * as fx from './payer-fixtures.mjs'
 
 const WEB = process.env.WEB_URL ?? 'http://localhost:3000'
 const API = (process.env.API_URL ?? 'http://localhost:8787').replace(/\/+$/, '')
@@ -20,9 +30,18 @@ const PROFILE_WALLET = process.env.PROFILE_WALLET ?? '0x8ba1f109551bD43280301264
 const WIDTHS = (process.env.WIDTHS ?? '1600,1280,390').split(',').map(Number)
 const CHAIN_ID = Number(process.env.CHAIN_ID ?? 42431)
 const STALL_CHECK = process.env.STALL_CHECK !== '0'
+const SUITES = new Set((process.env.SUITES ?? 'public,payee,payer').split(','))
+/** Funded Tempo TESTNET key: the fake wallet then sends real transactions (org authorization). */
+const LIVE_ROOT_KEY = process.env.LIVE_ROOT_KEY
 
 fs.mkdirSync(OUT, { recursive: true })
-const account = privateKeyToAccount(generatePrivateKey())
+const account = privateKeyToAccount(LIVE_ROOT_KEY ?? generatePrivateKey())
+if (LIVE_ROOT_KEY && CHAIN_ID !== 42431) throw new Error('LIVE_ROOT_KEY is for Tempo testnet (42431) only')
+const liveChain = LIVE_ROOT_KEY
+  ? createClient({ account: Account.fromSecp256k1(LIVE_ROOT_KEY), chain: tempoModerato.extend({ feeToken: '0x20c0000000000000000000000000000000000000' }), transport: http() })
+      .extend(publicActions)
+      .extend(walletActions)
+  : null
 const report = []
 const now = Math.floor(Date.now() / 1000)
 
@@ -82,6 +101,10 @@ const walletHandler = () => {
       case 'eth_estimateGas':
         return '0x30000'
       case 'eth_sendTransaction':
+        if (liveChain) {
+          const [t] = params
+          return liveChain.sendTransaction({ to: t.to, data: t.data })
+        }
         return '0x' + 'e7'.repeat(32)
       default:
         return { __error: { code: 4200, message: `Test wallet does not support ${method}` } }
@@ -171,7 +194,7 @@ const fixtureRow = (over = {}) => {
 // ---------- harness ----------
 const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' }
 
-async function open(width, { payee } = {}) {
+async function open(width, { payee, payer, orgToken } = {}) {
   const browser = await chromium.launch()
   const context = await browser.newContext({ viewport: { width, height: width < 600 ? 844 : 900 } })
   await context.exposeFunction('__wallet', walletHandler())
@@ -188,6 +211,7 @@ async function open(width, { payee } = {}) {
       [`bound.payeeVerification.${account.address.toLowerCase()}`, JSON.stringify({ id: 'pv_demo', ...(payee.saved ?? {}) })],
     )
   }
+  if (orgToken) await context.addInitScript(([k, v]) => localStorage.setItem(k, v), [`bound.orgToken.${orgToken.id}`, orgToken.token])
   // /v1/verify always comes from fixtures (the verify API is a separate task); payee-verification routes only when mocking.
   await context.route(`${API}/v1/**`, async (route) => {
     const req = route.request()
@@ -199,6 +223,7 @@ async function open(width, { payee } = {}) {
       const body = req.postDataJSON()
       return verifyFixtures[body.payeeName] ? json(200, verifyResponse(body.payeeName)) : json(400, { error: 'Invalid request', issues: [{ path: ['address'], message: 'Invalid wallet address' }] })
     }
+    if (payer && (url.pathname.startsWith(`/v1/orgs/${fx.ORG_ID}/`) || url.pathname.startsWith(`/v1/lab/${fx.ORG_ID}/`))) return payer({ url, method, req, json })
     if (!state.row || !url.pathname.startsWith('/v1/payee-verifications/')) return route.continue()
     const action = url.pathname.split('/')[4] ?? ''
     const row = state.row
@@ -242,7 +267,7 @@ async function open(width, { payee } = {}) {
   return { browser, page, errors, state, width }
 }
 
-async function shot(s, name, { expectErrors = false } = {}) {
+async function shot(s, name, { expectErrors = false, mode } = {}) {
   const { page, errors, width } = s
   await page.waitForTimeout(400)
   const m = await page.evaluate(() => {
@@ -256,7 +281,7 @@ async function shot(s, name, { expectErrors = false } = {}) {
   })
   const file = path.join(OUT, `${name}-${width}.png`)
   await page.screenshot({ path: file, fullPage: true })
-  report.push({ file, overflow: m.overflow, navRightGap: m.navRightGap, navTop: m.navTop, consoleErrors: expectErrors ? [] : [...errors], expectedErrors: expectErrors ? [...errors] : [] })
+  report.push({ file, ...(mode ? { mode } : {}), overflow: m.overflow, navRightGap: m.navRightGap, navTop: m.navTop, consoleErrors: expectErrors ? [] : [...errors], expectedErrors: expectErrors ? [...errors] : [] })
   errors.length = 0
 }
 
@@ -383,7 +408,202 @@ async function run(width) {
   await s.browser.close()
 }
 
-for (const w of WIDTHS) await run(w)
+// ---------- payer dashboard + attack lab (Task 13) ----------
+
+/** page.route handler for the fixture org (fx.ORG_ID). `st` tweaks a scenario mid-run. */
+function payerFixtures({ variant = 'full' } = {}) {
+  const st = { variant, labMode: false, next: null, hold: false, labStatus: null, listChanges: false, prepares: 0, runs: [], polls: {} }
+  const handler = ({ url, method, json }) => {
+    const now = Math.floor(Date.now() / 1000)
+    const parts = url.pathname.split('/').filter(Boolean) // v1, orgs|lab, org_demo, …
+    if (parts[1] === 'lab') {
+      if (st.labStatus) return json(st.labStatus.status, st.labStatus.body)
+      const run = fx.labRuns[st.next]
+      st.runs = [run, ...st.runs.filter((r) => r.id !== run.id)]
+      st.polls[run.id] = 0
+      return json(202, { invoiceId: run.id })
+    }
+    const [what, id, action] = parts.slice(3)
+    const ov = () => (st.labMode ? fx.labOverview({ root: account.address, now, runs: st.runs }) : fx.overview({ root: account.address, now, variant: st.variant }))
+    if (what === 'overview') return json(200, ov())
+    if (what === 'invoices' && method === 'POST') return json(202, { invoiceId: 'inv_new' })
+    if (what === 'invoices' && id) {
+      const run = st.runs.find((r) => r.id === id)
+      if (run) return json(200, st.polls[id]++ === 0 || st.hold ? fx.partial(run) : run)
+      const d = fx.invoiceDetail(id, ov())
+      return d ? json(200, d) : json(404, { error: 'Invoice not found' })
+    }
+    if (what === 'approvals' && action === 'prepare') {
+      st.prepares++
+      const p = fx.prepared(account.address, id)
+      // the list moves between the review and the signature (another approval was prepared meanwhile)
+      if (st.listChanges && st.prepares >= 2) return json(200, { ...p, recipients: [...p.recipients, fx.CARRIED], carried: [...p.carried, fx.CARRIED] })
+      return json(200, p)
+    }
+    if (what === 'approvals' && action === 'confirm') return json(200, { approved: true, payment: { status: 'paid', txHash: '0x' + 'c7'.repeat(32) } })
+    if (what === 'approvals' && action === 'reject') return json(200, { rejected: true })
+    return json(404, { error: 'Not found' })
+  }
+  return { handler, st }
+}
+
+const LIVE = { mode: 'live' }
+const FIXTURE = { mode: 'fixture' }
+const demoToken = { id: fx.ORG_ID, token: 'fixture-token' }
+
+async function runPayer(width) {
+  // Org setup: live against the local API (org creation is off-chain).
+  let s = await open(width)
+  await s.page.goto(`${WEB}/app`)
+  await s.page.getByRole('button', { name: 'Connect wallet' }).last().waitFor()
+  await shot(s, 'app-1-connect', LIVE)
+  await connect(s.page)
+  await s.page.getByLabel('Company name').waitFor()
+  await shot(s, 'app-2-details', LIVE)
+  if (width === 1280) {
+    await s.page.getByLabel('Company name').fill('Northwind Trading')
+    await s.page.getByLabel('Weekly limit (USD)').fill('lots')
+    await click(s.page, 'Create organization')
+    await s.page.locator('form p.text-red-700').first().waitFor()
+    await shot(s, 'app-2-details-error', { ...LIVE, expectErrors: true })
+  }
+  await s.page.getByLabel('Company name').fill('Northwind Trading')
+  await s.page.getByLabel('Weekly limit (USD)').fill('50')
+  await click(s.page, 'Create organization')
+  await s.page.getByRole('button', { name: 'Authorize in wallet' }).waitFor()
+  await shot(s, 'app-3-authorize', LIVE)
+  const created = await s.page.evaluate(() => {
+    const k = Object.keys(localStorage).find((x) => x.startsWith('bound.orgToken.'))
+    return { id: k.slice('bound.orgToken.'.length), token: localStorage.getItem(k) }
+  })
+
+  if (LIVE_ROOT_KEY && width === 1280) {
+    // Real testnet transaction from the (funded, throwaway) root → POST /authorized → dashboard.
+    await click(s.page, 'Authorize in wallet')
+    await s.page.waitForURL(/\/app\/org_/, { timeout: 180_000 })
+    await s.page.getByText('Key authorized').waitFor({ timeout: 30_000 })
+    await s.page.waitForTimeout(3500)
+    await shot(s, 'app-4-dashboard-authorized', LIVE)
+    report.push({ note: `live org ${created.id} authorized on testnet: ${await s.page.getByRole('link', { name: /Key authorized/ }).getAttribute('href')}` })
+  } else {
+    // A reload resumes setup at the authorize step, next to the org picker.
+    await s.page.reload()
+    await s.page.getByText('Setup unfinished').waitFor({ timeout: 30_000 })
+    await s.page.getByRole('button', { name: 'Authorize in wallet' }).waitFor()
+    await shot(s, 'app-4-resume', LIVE)
+    await s.page.goto(`${WEB}/app/${created.id}`)
+    await s.page.getByText("The agent key isn't authorized yet").waitFor({ timeout: 30_000 })
+    await shot(s, 'dash-live-unauthorized', LIVE)
+  }
+
+  if (width === 1280) {
+    // Live invoice + live lab run: the agent has no ANTHROPIC_API_KEY locally, so both end in "failed".
+    await s.page.getByLabel('Invoice text').fill(`From: Acme Ltd <billing@acme.com>\nInvoice INV-2001\nAmount due: 12.50 USD\nPay to (Tempo): ${fx.ACME}`)
+    await click(s.page, 'Send to agent')
+    await s.page.getByText(/Agent error|stopped without/).first().waitFor({ timeout: 60_000 })
+    await shot(s, 'dash-live-invoice-failed', LIVE)
+    await s.page.goto(`${WEB}/app/${created.id}/lab`)
+    await click(s.page, 'Real Acme invoice')
+    await click(s.page, 'Run the agent')
+    await s.page.getByText('The agent stopped without a decision.').waitFor({ timeout: 60_000 })
+    await s.page.waitForTimeout(2000)
+    await shot(s, 'lab-live-failed', LIVE)
+  }
+  await s.browser.close()
+
+  // Dashboard with approvals, invoices, payees and activity (fixture org).
+  let f = payerFixtures()
+  s = await open(width, { payer: f.handler, orgToken: demoToken })
+  await s.page.goto(`${WEB}/app/${fx.ORG_ID}`)
+  await s.page.getByText(/Connect this organization's root wallet/).first().waitFor()
+  await shot(s, 'dash', FIXTURE)
+  await connect(s.page)
+  await s.page.getByRole('button', { name: /INV-1043/ }).click()
+  await s.page.getByText('report_blocked').first().waitFor()
+  await shot(s, 'dash-log', FIXTURE)
+  await s.page.getByRole('button', { name: /INV-1043/ }).click()
+  await s.page.getByRole('button', { name: 'Approve', exact: true }).first().click()
+  await s.page.getByText('Your signature sets the allowlist to').waitFor()
+  await shot(s, 'dash-review', FIXTURE)
+  await click(s.page, 'Sign allowlist update')
+  await s.page.getByText('Approved and paid.').waitFor()
+  await shot(s, 'dash-approved', FIXTURE)
+  await s.browser.close()
+
+  if (width === 1280) {
+    f = payerFixtures()
+    f.st.listChanges = true
+    s = await open(width, { payer: f.handler, orgToken: demoToken })
+    await s.page.goto(`${WEB}/app/${fx.ORG_ID}`)
+    await connect(s.page)
+    await s.page.getByRole('button', { name: 'Approve', exact: true }).first().click()
+    await click(s.page, 'Sign allowlist update')
+    await s.page.getByText('The list changed since you reviewed it').waitFor()
+    await shot(s, 'dash-list-changed', FIXTURE)
+    await s.browser.close()
+
+    for (const [variant, name, wait] of [
+      ['changed', 'dash-approval-changed', "Wallet changed payees can't be approved."],
+      ['not-root', 'dash-not-root', "isn't this organization's root account"],
+      ['capacity', 'dash-capacity', 'Nearly full.'],
+    ]) {
+      s = await open(width, { payer: payerFixtures({ variant }).handler, orgToken: demoToken })
+      await s.page.goto(`${WEB}/app/${fx.ORG_ID}`)
+      await connect(s.page)
+      await s.page.getByText(wait).first().waitFor()
+      await shot(s, name, FIXTURE)
+      await s.browser.close()
+    }
+
+    s = await open(width)
+    await s.page.goto(`${WEB}/app/${fx.ORG_ID}`)
+    await s.page.getByText("This browser can't open this organization").waitFor()
+    await shot(s, 'dash-no-access', LIVE)
+    await s.browser.close()
+  }
+
+  // Attack lab (fixture org): the four presets.
+  f = payerFixtures()
+  f.st.labMode = true
+  s = await open(width, { payer: f.handler, orgToken: demoToken })
+  await s.page.goto(`${WEB}/app/${fx.ORG_ID}/lab`)
+  await s.page.getByText('Try to make your agent pay a stranger.').waitFor()
+  await shot(s, 'lab', FIXTURE)
+  const labRun = async (preset, key, name, wait, { run = 'Run the agent', expectErrors = false } = {}) => {
+    f.st.next = key
+    await click(s.page, preset)
+    await click(s.page, run)
+    if (!f.st.labStatus) await s.page.getByText(fx.labRuns[key].id).waitFor()
+    await s.page.getByText(wait).first().waitFor({ timeout: 20_000 })
+    await s.page.waitForTimeout(500)
+    await shot(s, name, { ...FIXTURE, expectErrors })
+  }
+  await labRun('Real Acme invoice', 'real', 'lab-1-real', "checks out, but you haven't approved it yet")
+  await labRun('Changed wallet (lookalike)', 'changed', 'lab-2-changed', 'This payment imitates a verified company')
+  await labRun('Compromised real domain', 'compromised', 'lab-3-compromised', 'This payment imitates a verified company')
+  await labRun('Injected + guard off', 'injected', 'lab-4-injected', 'Our software was off. Tempo still said no.', { run: 'Run with the guard off' })
+  const href = await s.page.getByRole('link', { name: /View the reverted transaction/ }).getAttribute('href')
+  report.push({ note: `lab-4 explorer link ${href === fx.PROOF_URL ? 'matches the testnet proof tx' : 'MISMATCH'}: ${href}` })
+
+  if (width === 1280) {
+    f.st.hold = true
+    await labRun('Changed wallet (lookalike)', 'changed', 'lab-running', 'Agent working…')
+    f.st.hold = false
+    await labRun('Real Acme invoice', 'paid', 'lab-paid', 'Paid $12.50 to Acme Ltd.')
+    await labRun('Injected + guard off', 'notSent', 'lab-not-sent', 'Not sent — the lab only fires payments Tempo will refuse.', { run: 'Run with the guard off' })
+    await labRun('Injected + guard off', 'unconfirmed', 'lab-unconfirmed', 'Sent, awaiting confirmation.', { run: 'Run with the guard off' })
+    f.st.labStatus = { status: 429, body: { error: 'Too many requests' } }
+    await labRun('Real Acme invoice', 'real', 'lab-429', 'Too many requests', { expectErrors: true })
+    f.st.labStatus = { status: 404, body: { error: 'Not found' } }
+    await labRun('Real Acme invoice', 'real', 'lab-disabled', 'Attack lab is disabled on this network', { expectErrors: true })
+  }
+  await s.browser.close()
+}
+
+for (const w of WIDTHS) {
+  if (SUITES.has('public') || SUITES.has('payee')) await run(w)
+  if (SUITES.has('payer')) await runPayer(w)
+}
 
 console.log(JSON.stringify(report, null, 2))
 const bad = report.filter((r) => r.file && (r.overflow > 0 || r.consoleErrors.length))

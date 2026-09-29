@@ -27,7 +27,8 @@ const str = (v: unknown) => (typeof v === 'string' ? v : undefined)
 function describe(e: OrgEvent, payee: string | undefined): string {
   const d = e.detail ?? {}
   const amount = usd(str(d.amount))
-  const to = payee ?? (str(d.to) ? short(str(d.to)!) : 'a payee')
+  // full address when there's no name: a lookalike shares its first and last characters with the real wallet
+  const to = payee ?? str(d.to) ?? 'a payee'
   const verdict = str(d.verdict) as Verdict | undefined
   switch (e.kind) {
     case 'paid':
@@ -76,7 +77,7 @@ export function EventFeed({ events, invoices, pins }: { events: OrgEvent[]; invo
 
   return (
     <section className={card} aria-labelledby="activity-label">
-      <span id="activity-label" className={sectionLabel}>
+      <span id="activity-label" className={`block ${sectionLabel}`}>
         Activity
       </span>
       {events.length === 0 ? (
