@@ -516,3 +516,14 @@ describe('registry name-squatting guard on /attest', () => {
     expect((await attest()).status).toBe(200)
   })
 })
+
+describe('rate limits on the proof checks', () => {
+  test.each(['check-dns', 'check-lei'])('/%s allows 30 per minute per IP, then 429', async (path) => {
+    const { app, db, services } = setup({ lookupLei: vi.fn(async () => null as any) })
+    db.insert(payeeVerifications).values({ id: 'pv_r', wallet: '0x' + '11'.repeat(20), legalName: 'Acme Ltd', domain: 'acme.com', lei: '5493001KJTIIGC8Y1R12', nonce: 'n', createdAt: 1 }).run()
+    for (let i = 0; i < 30; i++) expect((await request(app).post(`/v1/payee-verifications/pv_r/${path}`)).status).toBe(200)
+    const r = await request(app).post(`/v1/payee-verifications/pv_r/${path}`)
+    expect(r.status).toBe(429)
+    expect((path === 'check-dns' ? services.resolveTxt : services.lookupLei)).toHaveBeenCalledTimes(30)
+  })
+})
