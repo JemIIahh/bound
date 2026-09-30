@@ -5,7 +5,7 @@ import { usd } from '@/lib/format'
 function Figure({ value, max, className }: { value: string; max: number; className: string }) {
   const fit = 100 / (Math.max(2, value.length) * 0.6)
   return (
-    <p style={{ fontSize: `min(${max}px, ${fit.toFixed(2)}cqw)` }} className={`whitespace-nowrap font-extrabold leading-none tracking-[-0.05em] tabular-nums [font-stretch:92%] ${className}`}>
+    <p style={{ fontSize: `min(${max}px, ${fit.toFixed(2)}cqw)` }} className={`whitespace-nowrap font-extrabold leading-none tracking-[-0.05em] tabular-nums ${className}`}>
       {value}
     </p>
   )

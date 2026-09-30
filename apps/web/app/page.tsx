@@ -147,12 +147,12 @@ export default function Home() {
       <div className="relative overflow-hidden">
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute right-[-45%] top-[30%] h-[520px] w-[520px] bg-[radial-gradient(closest-side,rgba(255,91,31,0.14),rgba(255,91,31,0))] sm:right-[-8%] sm:top-[-40%] sm:h-[800px] sm:w-[1000px]"
+          className="pointer-events-none absolute right-[-45%] top-[30%] h-[520px] w-[520px] bg-[radial-gradient(closest-side,rgba(255,90,60,0.14),rgba(255,90,60,0))] sm:right-[-8%] sm:top-[-40%] sm:h-[800px] sm:w-[1000px]"
         />
         <section className={`${wrap} relative pb-[72px] pt-8 sm:pb-[120px] sm:pt-14`}>
           <div className="grid grid-cols-1 items-center gap-12 min-[1100px]:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] min-[1100px]:gap-16">
             <div>
-              <h1 className="font-display text-[64px] font-extrabold leading-[0.92] tracking-[-0.045em] [font-stretch:96%] sm:text-[112px] sm:leading-[0.9]">
+              <h1 className="font-display text-[64px] font-extrabold leading-[0.92] tracking-[-0.045em] sm:text-[112px] sm:leading-[0.9]">
                 Your AI
                 <br /> can&apos;t pay a <span className="text-acc">stranger.</span>
               </h1>
@@ -177,7 +177,7 @@ export default function Home() {
 
       <section className={`${wrap} pb-20 pt-6 sm:pb-32 sm:pt-10`}>
         <div className="grid grid-cols-1 items-end gap-4 md:grid-cols-2 md:gap-10">
-          <h2 className="font-display text-[44px] font-extrabold leading-[0.96] tracking-[-0.045em] [font-stretch:96%] sm:text-[64px]">
+          <h2 className="font-display text-[44px] font-extrabold leading-[0.96] tracking-[-0.045em] sm:text-[64px]">
             Two locks. <span className="text-fg3">One is ours, one is the chain&apos;s.</span>
           </h2>
           <p className="max-w-[440px] text-[17px] text-fg2 md:justify-self-end">
@@ -212,9 +212,9 @@ export default function Home() {
       <section className={wrap}>
         <div
           className={`${card} grid grid-cols-1 items-end gap-8 !px-6 !py-8 sm:!p-16 min-[1100px]:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] min-[1100px]:gap-12`}
-          style={{ background: 'radial-gradient(60% 90% at 100% 0%, rgba(255,91,31,0.16), rgba(255,91,31,0) 70%), var(--color-card)' }}
+          style={{ background: 'radial-gradient(60% 90% at 100% 0%, rgba(255,90,60,0.16), rgba(255,90,60,0) 70%), var(--color-card)' }}
         >
-          <h2 className="font-display text-5xl font-extrabold leading-[0.92] tracking-[-0.045em] [font-stretch:96%] sm:text-[72px]">
+          <h2 className="font-display text-5xl font-extrabold leading-[0.92] tracking-[-0.045em] sm:text-[72px]">
             Think your AI can be tricked? <span className="text-acc">Try it.</span>
           </h2>
           <div className="min-[1100px]:justify-self-end min-[1100px]:text-right">

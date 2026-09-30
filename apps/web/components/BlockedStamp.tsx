@@ -10,10 +10,10 @@ export function BlockedStamp({
 }) {
   return (
     <div
-      className={`-rotate-6 whitespace-nowrap rounded-2xl border-4 border-acc bg-[rgba(10,11,13,0.85)] p-1.5 text-acc shadow-[0_20px_50px_-10px_rgba(0,0,0,0.7),0_0_60px_-10px_rgba(255,91,31,0.35)] ${className}`}
+      className={`-rotate-6 whitespace-nowrap rounded-2xl border-4 border-acc bg-[rgba(16,14,13,0.85)] p-1.5 text-acc shadow-[0_20px_50px_-10px_rgba(0,0,0,0.7),0_0_60px_-10px_rgba(255,90,60,0.35)] ${className}`}
     >
       <div className="rounded-[10px] border-2 border-acc px-4 py-2 text-center sm:px-6 sm:py-3">
-        <b className="block text-[30px] font-black uppercase leading-[0.95] tracking-[-0.01em] [font-stretch:118%] sm:text-[54px]">
+        <b className="block text-[30px] font-black uppercase leading-[0.95] tracking-[-0.01em] sm:text-[54px]">
           {verb}
           <br />
           by Tempo

@@ -40,7 +40,7 @@ export function Avatar({ name, flagged = false, size = 40 }: { name: string | nu
   const style = { width: size, height: size, fontSize: size <= 32 ? 13 : 15 }
   if (flagged)
     return (
-      <span aria-hidden="true" style={style} className="grid shrink-0 place-items-center rounded-full bg-raised font-bold text-acc2 shadow-[inset_0_0_0_1.5px_rgba(255,91,31,0.7)]">
+      <span aria-hidden="true" style={style} className="grid shrink-0 place-items-center rounded-full bg-raised font-bold text-acc2 shadow-[inset_0_0_0_1.5px_rgba(255,90,60,0.7)]">
         ?
       </span>
     )
@@ -110,16 +110,16 @@ export function ShieldIcon({ size = 10 }: { size?: number }) {
 export function BoundMark({ size = 28 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" className="shrink-0">
-      <rect width="24" height="24" rx="6" fill="#ececea" />
-      <rect x="2.75" y="2.75" width="18.5" height="18.5" rx="5" stroke="#0d0d0d" strokeWidth="1.75" />
-      <rect x="8.25" y="8.25" width="7.5" height="7.5" rx="1.75" fill="#0d0d0d" />
+      <rect width="24" height="24" rx="6" fill="#f5efe5" />
+      <rect x="2.75" y="2.75" width="18.5" height="18.5" rx="5" stroke="#171412" strokeWidth="1.75" />
+      <rect x="8.25" y="8.25" width="7.5" height="7.5" rx="1.75" fill="#171412" />
     </svg>
   )
 }
 
 export function Logo({ small = false }: { small?: boolean }) {
   return (
-    <span className={`flex items-center gap-2.5 font-extrabold tracking-[-0.02em] text-fg [font-stretch:115%] ${small ? 'text-lg' : 'text-xl sm:text-[22px]'}`}>
+    <span className={`flex items-center gap-2.5 font-extrabold tracking-[-0.02em] text-fg ${small ? 'text-lg' : 'text-xl sm:text-[22px]'}`}>
       <BoundMark size={small ? 24 : 30} />
       Bound
     </span>

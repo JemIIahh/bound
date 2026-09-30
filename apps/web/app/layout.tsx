@@ -1,14 +1,15 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { Archivo, JetBrains_Mono } from 'next/font/google'
+import { IBM_Plex_Mono, Outfit, Poppins } from 'next/font/google'
 import { Providers } from './providers'
 import { Nav } from '@/components/Nav'
 import { Logo } from '@/components/atoms'
 import { wrap } from '@/components/ui'
 import './globals.css'
 
-const sans = Archivo({ variable: '--font-archivo', subsets: ['latin'], axes: ['wdth'] })
-const mono = JetBrains_Mono({ variable: '--font-jetbrains', subsets: ['latin'] })
+const display = Outfit({ variable: '--font-outfit', subsets: ['latin'] })
+const sans = Poppins({ variable: '--font-poppins', subsets: ['latin'], weight: ['300', '400', '500', '600', '700'] })
+const mono = IBM_Plex_Mono({ variable: '--font-plex-mono', subsets: ['latin'], weight: ['400', '500', '600'] })
 
 export const metadata: Metadata = {
   title: { default: 'Bound', template: '%s · Bound' },
@@ -24,7 +25,7 @@ const FOOT_LINKS = [
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     // font variables on <html>: the theme's --font-sans/--font-mono are declared on :root and must resolve there
-    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
+    <html lang="en" className={`${display.variable} ${sans.variable} ${mono.variable}`}>
       <body className="antialiased">
         <Providers>
           <div className="flex min-h-screen flex-col">

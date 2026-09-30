@@ -9,7 +9,7 @@ export const card = 'rounded-card border border-line bg-card p-6 shadow-card sm:
 /** The one light card that highlights the item needing action. */
 export const invCard = 'inv rounded-card border border-cream bg-cream p-6 shadow-inv sm:p-10'
 
-export const pageTitle = 'font-display text-[40px] font-extrabold leading-[0.98] tracking-[-0.045em] text-fg [font-stretch:96%] sm:text-[56px]'
+export const pageTitle = 'font-display text-[40px] font-extrabold leading-[0.98] tracking-[-0.045em] text-fg sm:text-[56px]'
 export const pageLede = 'text-base leading-relaxed text-fg2 sm:text-[17px]'
 export const cardTitle = 'text-2xl font-semibold leading-[1.15] tracking-[-0.025em] text-fg sm:text-[26px]'
 export const sectionTitle = 'text-2xl font-bold tracking-[-0.03em] text-fg sm:text-[28px]'
