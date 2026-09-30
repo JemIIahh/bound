@@ -1,4 +1,5 @@
 import type { InvoiceStatus } from '@/lib/api'
+import { Pill } from './atoms'
 import { Badge, type Tone } from './VerdictCard'
 
 /** How each invoice status reads. The status itself always comes from the API. */
@@ -20,6 +21,7 @@ export const isOpenStatus = (s: string) => s === 'new' || s === 'processing' || 
 
 export function StatusBadge({ status }: { status: string }) {
   const s = invoiceStatus(status)
+  if (status === 'new' || status === 'processing') return <Pill dot="bg-current live-dot">{s.label}</Pill>
   return <Badge tone={s.tone}>{s.label}</Badge>
 }
 

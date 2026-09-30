@@ -6,41 +6,42 @@ import type { Overview } from '@/lib/api'
 import { addressUrl, txUrl } from '@/lib/chain'
 import { periodLabel, usd } from '@/lib/format'
 import type { OverviewState } from '@/lib/hooks'
-import { card, ghostBtn, primaryBtn, sectionLabel, short } from '@/components/ui'
+import { Pill } from '@/components/atoms'
+import { card, cardTitle, ghostBtn, isTxHash, link, pageTitle, primaryBtn, short, wrap } from '@/components/ui'
 
-const link = 'underline decoration-fg3/50 underline-offset-4 hover:text-fg'
-
-/** Page title block shared by the dashboard and the lab: org name, root, key, limit. */
-export function OrgHeader({ o, eyebrow, action }: { o: Overview; eyebrow: string; action?: ReactNode }) {
+/** Dashboard title block: greeting, what's waiting, the org's root/key/limit, and the page actions. */
+export function OrgHeader({ o, sub, actions }: { o: Overview; sub?: ReactNode; actions?: ReactNode }) {
   const limit = usd(o.org.limitBase)
   const left = usd(o.remaining)
   return (
-    <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+    <header className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
       <div className="min-w-0">
-        <p className={`${sectionLabel} mb-4`}>{eyebrow}</p>
-        <h1 className="font-display text-4xl font-medium leading-[1.1] tracking-[-0.02em] text-fg [overflow-wrap:anywhere] sm:text-5xl">{o.org.name}</h1>
-        <p className="mt-4 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[12.5px] text-fg3">
+        <h1 className={`${pageTitle} [overflow-wrap:anywhere]`}>Nothing gets past {o.org.name}.</h1>
+        {sub && <p className="mt-4 text-base text-fg2 sm:text-[17px]">{sub}</p>}
+        <p className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[14px] text-fg3">
           <span>
             Root{' '}
-            <a href={addressUrl(o.org.rootAddress)} target="_blank" rel="noreferrer" className={link}>
+            <a href={addressUrl(o.org.rootAddress)} target="_blank" rel="noreferrer" className={`font-mono text-[12.5px] ${link}`}>
               {short(o.org.rootAddress)}
             </a>
           </span>
-          <span>Agent key {short(o.org.agentKeyAddress)}</span>
+          <span>
+            Agent key <span className="font-mono text-[12.5px]">{short(o.org.agentKeyAddress)}</span>
+          </span>
           {limit && (
             <span>
               {limit} per {periodLabel(o.org.periodSeconds)}
               {left && o.org.authorized ? ` · ${left} left` : ''}
             </span>
           )}
-          {o.org.authorizeTx && (
+          {isTxHash(o.org.authorizeTx) && (
             <a href={txUrl(o.org.authorizeTx)} target="_blank" rel="noreferrer" className={link}>
               Key authorized ↗
             </a>
           )}
         </p>
       </div>
-      {action && <div className="shrink-0">{action}</div>}
+      {actions && <div className="flex shrink-0 gap-2">{actions}</div>}
     </header>
   )
 }
@@ -73,9 +74,12 @@ export function KeyNotice({ o }: { o: Overview }) {
 
 function Notice({ title, tone, children }: { title: string; tone?: 'red'; children: ReactNode }) {
   return (
-    <div className={`${card} flex flex-col gap-2 text-sm leading-relaxed text-fg3`} role="status">
-      <p className="flex items-center gap-2.5 text-base text-fg">
-        <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${tone === 'red' ? 'bg-acc' : 'bg-amber'}`} />
+    <div
+      className={`flex flex-col gap-2 rounded-card border p-6 text-[15px] leading-relaxed text-fg2 sm:px-8 ${tone === 'red' ? 'border-acc/50 bg-acc/10' : 'border-amber/40 bg-amber/[0.07]'}`}
+      role="status"
+    >
+      <p className={`flex items-center gap-2.5 text-lg font-semibold ${tone === 'red' ? 'text-acc2' : 'text-fg'}`}>
+        <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${tone === 'red' ? 'bg-acc' : 'bg-amber'}`} />
         {title}
       </p>
       {children}
@@ -100,15 +104,16 @@ export function OrgGate({ orgId, state }: { orgId: string; state: OverviewState 
   }
   const settled = access === 'no-token' || access === 'denied'
   return (
-    <main className="mx-auto w-full max-w-xl flex-1 px-5 py-16 sm:px-8">
-      <div className={`${card} flex flex-col gap-3`}>
-        <span className={sectionLabel}>Organization</span>
-        <p className="flex items-center gap-3 font-display text-2xl tracking-[-0.01em] text-fg">
-          {!settled && !error && <span className="live-dot inline-block h-1.5 w-1.5 rounded-full bg-fg" />}
-          {title}
-        </p>
+    <main className={`${wrap} flex flex-1 flex-col items-center py-12 sm:py-20`}>
+      <div className={`${card} flex w-full max-w-xl flex-col gap-4`}>
+        <div>
+          <Pill tone={settled || error ? 'amber' : 'grey'} dot={!settled && !error ? 'bg-current live-dot' : undefined}>
+            Organization
+          </Pill>
+        </div>
+        <p className={`mt-2 ${cardTitle}`}>{title}</p>
         <p className="font-mono text-[12.5px] text-fg3 [overflow-wrap:anywhere]">{orgId}</p>
-        {body && <div className="text-sm leading-relaxed text-fg3">{body}</div>}
+        {body && <div className="text-[15px] leading-relaxed text-fg2">{body}</div>}
         {settled && (
           <Link href="/app" className={`${ghostBtn} mt-2`}>
             Your organizations
