@@ -1,7 +1,14 @@
-// Screenshots every page at 1600 / 1280 / 390 and checks for horizontal overflow and console errors.
+// Screenshots every page at 1440 / 1280 / 390 and checks for horizontal overflow and console errors.
 //
 //   pnpm dev:server & pnpm dev:web
 //   SHOTS_DIR=/tmp/shots PROFILE_WALLET=0x… node apps/web/scripts/screenshots.mjs
+//
+// OFFLINE=1 needs no Bound server at all: every API call is answered from fixtures (page.route), and a tiny
+// fixture server on API_URL's port answers the server-rendered payee profile. Run the web app with
+// NEXT_PUBLIC_API_URL pointing at that port (default http://localhost:8799), e.g.
+//   NEXT_PUBLIC_API_URL=http://localhost:8799 pnpm --filter @bound/web dev -p 3200
+//   OFFLINE=1 WEB_URL=http://localhost:3200 API_URL=http://localhost:8799 node apps/web/scripts/screenshots.mjs
+// Every report entry is then "fixture"; nothing is created on any real server or chain.
 //
 // A fake EIP-6963 wallet (random throwaway key, never funded) signs for real, so the payee flow runs against
 // the live API up to the DNS check. States the local API can't reach (LEI, mining, registration, publish)
@@ -14,6 +21,7 @@
 // signs and sends the authorize transaction on testnet. Agent-dependent states (approvals, verdicts, events, lab
 // results) come from scripts/payer-fixtures.mjs via page.route; each report entry says live or fixture.
 import fs from 'node:fs'
+import nodeHttp from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { chromium } from 'playwright'
@@ -27,12 +35,17 @@ const WEB = process.env.WEB_URL ?? 'http://localhost:3000'
 const API = (process.env.API_URL ?? 'http://localhost:8787').replace(/\/+$/, '')
 const OUT = process.env.SHOTS_DIR ?? path.join(os.tmpdir(), 'bound-web-shots')
 const PROFILE_WALLET = process.env.PROFILE_WALLET ?? '0x8ba1f109551bD432803012645Ac136ddd64DBA72'
-const WIDTHS = (process.env.WIDTHS ?? '1600,1280,390').split(',').map(Number)
+const WIDTHS = (process.env.WIDTHS ?? '1440,1280,390').split(',').map(Number)
 const CHAIN_ID = Number(process.env.CHAIN_ID ?? 42431)
 const STALL_CHECK = process.env.STALL_CHECK !== '0'
+/** Shoot every state at every width (ALL_STATES=0: the extra states at 1280 only). */
+const ALL_STATES = process.env.ALL_STATES !== '0'
 const SUITES = new Set((process.env.SUITES ?? 'public,payee,payer').split(','))
 /** Funded Tempo TESTNET key: the fake wallet then sends real transactions (org authorization). */
 const LIVE_ROOT_KEY = process.env.LIVE_ROOT_KEY
+/** Answer every API call from fixtures (no Bound server, no chain). */
+const OFFLINE = process.env.OFFLINE === '1'
+if (OFFLINE && LIVE_ROOT_KEY) throw new Error('OFFLINE=1 and LIVE_ROOT_KEY exclude each other')
 
 fs.mkdirSync(OUT, { recursive: true })
 const account = privateKeyToAccount(LIVE_ROOT_KEY ?? generatePrivateKey())
@@ -194,10 +207,100 @@ const fixtureRow = (over = {}) => {
   return { ...row, dns: { name: `_bound.${row.domain}`, type: 'TXT', value: `bound-verify=${row.nonce}` }, typedData: typedData(row) }
 }
 
+// ---------- offline API (OFFLINE=1) ----------
+
+/** The registry mirror the server-rendered profile reads: PROFILE_WALLET is verified, 0x1111… is unknown. */
+const profilePayee = { ...acme, masterId: '0x7a3f9c21', activeFrom: now - 86400 * 8, supersededAt: 0, revokedAt: 0, successor: null, evidenceHash: '0x' + '00'.repeat(32), updatedBlock: 1 }
+let fixtureServer = null
+if (OFFLINE) {
+  const port = Number(new URL(API).port || 80)
+  fixtureServer = nodeHttp
+    .createServer((req, res) => {
+      const send = (status, body) => (res.writeHead(status, { ...cors, 'content-type': 'application/json' }), res.end(JSON.stringify(body)))
+      if (req.method === 'OPTIONS') return send(204, {})
+      if (req.url === '/health') return send(200, { ok: true, network: 'testnet' })
+      const m = /^\/v1\/payees\/([^/?]+)/.exec(req.url ?? '')
+      if (!m) return send(404, { error: 'Not found' })
+      if (!/^0x[0-9a-fA-F]{40}$/.test(m[1])) return send(400, { error: 'Invalid address' })
+      return m[1].toLowerCase() === PROFILE_WALLET.toLowerCase() ? send(200, profilePayee) : send(404, { error: 'Payee not found' })
+    })
+    .listen(port)
+}
+
+const LIVE_ORG = 'org_offline'
+const agentFailed = (id, lab) => ({
+  ...inv0(id, lab),
+  orgId: LIVE_ORG,
+  raw: '…',
+  agentLog: [{ at: Date.now(), kind: 'text', data: 'Agent error: ANTHROPIC_API_KEY is not set on this server.' }],
+  payment: null,
+})
+const inv0 = (id, lab) => ({ id, payeeName: null, address: null, amountBase: null, currency: null, invoiceNo: null, senderDomain: null, dueDate: null, verdict: null, action: null, status: 'failed', lab: lab ? 1 : 0, createdAt: Math.floor(Date.now() / 1000) })
+
+/** What the local API does for the "live" flows (payee onboarding up to DNS, org setup, a failing agent), from fixtures. */
+function offlineApi({ url, method, req, json, state }) {
+  const path = url.pathname
+  const body = () => (req.postData() ? req.postDataJSON() : {})
+  if (path === '/v1/payee-verifications' && method === 'POST') {
+    const b = body()
+    const issues = []
+    if (String(b.legalName ?? '').trim().length < 2) issues.push({ path: ['legalName'], message: 'String must contain at least 2 character(s)' })
+    if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(String(b.domain ?? '').trim().toLowerCase())) issues.push({ path: ['domain'], message: 'Invalid domain' })
+    if (issues.length) return json(400, { error: 'Invalid request', issues })
+    state.row = fixtureRow({ wallet: b.wallet, legalName: b.legalName.trim(), domain: b.domain.trim().toLowerCase(), lei: '', sigVerified: false, dnsVerified: false })
+    return json(201, { id: state.row.id })
+  }
+  if (path.startsWith('/v1/payee-verifications/') && state.row) {
+    const action = path.split('/')[4] ?? ''
+    if (action === 'signature') {
+      state.row = fixtureRow({ ...state.row, sigVerified: true })
+      return json(200, { sigVerified: true })
+    }
+    if (action === 'check-dns') return json(200, { dnsVerified: false, found: [] })
+    return null
+  }
+  if (path === '/v1/orgs' && method === 'POST') {
+    const b = body()
+    if (!/^\s*[\d,]+(\.\d+)?\s*$/.test(String(b.limitUsd ?? ''))) return json(400, { error: `Invalid amount: ${b.limitUsd}` })
+    state.org = { id: LIVE_ORG, name: String(b.name).trim(), rootAddress: b.rootAddress, invoices: [] }
+    return json(201, { org: { id: LIVE_ORG, name: state.org.name, rootAddress: b.rootAddress, agentKeyAddress: fx.AGENT_KEY }, token: 'offline-token', authorizeCall: { to: '0xaAAAaaAA00000000000000000000000000000000', data: '0x' } })
+  }
+  const org = state.org
+  if (path.startsWith(`/v1/orgs/${LIVE_ORG}/`) || path.startsWith(`/v1/lab/${LIVE_ORG}/`)) {
+    if (!org) return json(401, { error: 'Unauthorized' })
+    const [, kind, , what, id] = path.split('/').filter(Boolean)
+    if (kind === 'lab') {
+      org.invoices.unshift(inv0('inv_offline_lab', true))
+      return json(202, { invoiceId: 'inv_offline_lab' })
+    }
+    if (what === 'overview')
+      return json(200, {
+        org: { id: LIVE_ORG, name: org.name, rootAddress: org.rootAddress, agentKeyAddress: fx.AGENT_KEY, limitBase: '50000000', periodSeconds: 604800, authorized: false, authorizeTx: null, createdAt: now },
+        keyStatus: 'unauthorized',
+        allowlist: [],
+        capacity: { used: 0, max: 57 },
+        remaining: null,
+        pins: [],
+        approvals: [],
+        invoices: org.invoices,
+        payments: [],
+        events: [],
+        counters: { checks: 0, paid: 0, blocked: 0, protectedBase: '0' },
+      })
+    if (what === 'invoices' && method === 'POST') {
+      org.invoices.unshift(inv0('inv_offline', false))
+      return json(202, { invoiceId: 'inv_offline' })
+    }
+    if (what === 'invoices' && id) return json(200, agentFailed(id, id.includes('lab')))
+    return json(404, { error: 'Not found' })
+  }
+  return null
+}
+
 // ---------- harness ----------
 const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' }
 
-async function open(width, { payee, payer, orgToken, liveWallet = false } = {}) {
+async function open(width, { payee, payer, orgToken, liveWallet = false, serverNetwork = 'testnet' } = {}) {
   const browser = await chromium.launch()
   const context = await browser.newContext({ viewport: { width, height: width < 600 ? 844 : 900 } })
   await context.exposeFunction('__wallet', walletHandler(liveWallet))
@@ -215,6 +318,11 @@ async function open(width, { payee, payer, orgToken, liveWallet = false } = {}) 
     )
   }
   if (orgToken) await context.addInitScript(([k, v]) => localStorage.setItem(k, v), [`bound.orgToken.${orgToken.id}`, orgToken.token])
+  // The server's network (NetworkNotice): fixture when offline or when a mismatch is being shown.
+  if (OFFLINE || serverNetwork !== 'testnet')
+    await context.route(`${API}/health`, (route) =>
+      route.fulfill({ status: 200, headers: { ...cors, 'content-type': 'application/json' }, body: JSON.stringify({ ok: true, network: serverNetwork }) }),
+    )
   // /v1/verify always comes from fixtures (the verify API is a separate task); payee-verification routes only when mocking.
   await context.route(`${API}/v1/**`, async (route) => {
     const req = route.request()
@@ -227,7 +335,11 @@ async function open(width, { payee, payer, orgToken, liveWallet = false } = {}) 
       return verifyFixtures[body.payeeName] ? json(200, verifyResponse(body.payeeName)) : json(400, { error: 'Invalid request', issues: [{ path: ['address'], message: 'Invalid wallet address' }] })
     }
     if (payer && (url.pathname.startsWith(`/v1/orgs/${fx.ORG_ID}/`) || url.pathname.startsWith(`/v1/lab/${fx.ORG_ID}/`))) return payer({ url, method, req, json })
-    if (!state.row || !url.pathname.startsWith('/v1/payee-verifications/')) return route.continue()
+    if (OFFLINE && !payee) {
+      const r = offlineApi({ url, method, req, json, state })
+      if (r) return r
+    }
+    if (!state.row || !url.pathname.startsWith('/v1/payee-verifications/')) return OFFLINE ? json(404, { error: 'Not found' }) : route.continue()
     const action = url.pathname.split('/')[4] ?? ''
     const row = state.row
     const set = (over) => (state.row = fixtureRow({ ...row, ...over }))
@@ -261,7 +373,7 @@ async function open(width, { payee, payer, orgToken, liveWallet = false } = {}) 
       set({ status: 'attested', attestTx: '0x' + 'a4'.repeat(32) })
       return json(200, { txHash: state.row.attestTx, level: row.leiVerified ? 2 : 1, action: 'attest' })
     }
-    return route.continue()
+    return OFFLINE ? json(404, { error: 'Not found' }) : route.continue()
   })
   const page = await context.newPage()
   const errors = []
@@ -317,7 +429,7 @@ async function run(width) {
   }
   await check(PROFILE_WALLET, 'Acme Holdings Ltd', 'acme.com', 'verify-match')
   await check(lookalikeAddr, 'ACME Ltd', 'acme-ltd.co', 'verify-lookalike')
-  if (width === 1280) {
+  if (ALL_STATES || width === 1280) {
     await check(PROFILE_WALLET, 'Acme Holding', '', 'verify-close-match')
     await check('0x52908400098527886E0F7030069857D2E4169EE7', 'Globex Corp', '', 'verify-no-match')
     await s.page.getByLabel('Wallet address').fill('0x123')
@@ -336,7 +448,7 @@ async function run(width) {
   await connect(s.page)
   await s.page.getByLabel('Legal name').waitFor()
   await shot(s, 'payee-2-details')
-  if (width === 1280) {
+  if (ALL_STATES || width === 1280) {
     await s.page.getByLabel('Legal name').fill('A')
     await s.page.getByLabel('Domain').fill('acme')
     await click(s.page, 'Continue')
@@ -380,7 +492,7 @@ async function run(width) {
   await shot(s, 'payee-8-published')
   await s.browser.close()
 
-  if (width === 1280) {
+  if (ALL_STATES || width === 1280) {
     s = await open(width, { payee: { row: {}, scenario: { leiMismatch: true } } })
     await s.page.goto(`${WEB}/payee`)
     await connect(s.page)
@@ -404,7 +516,7 @@ async function run(width) {
   await shot(s, 'profile')
   await s.page.goto(`${WEB}/payee/0x1111111111111111111111111111111111111111`)
   await shot(s, 'profile-missing')
-  if (width === 1280) {
+  if (ALL_STATES || width === 1280) {
     await s.page.goto(`${WEB}/payee/not-an-address`)
     await shot(s, 'profile-invalid')
   }
@@ -450,7 +562,7 @@ function payerFixtures({ variant = 'full' } = {}) {
   return { handler, st }
 }
 
-const LIVE = { mode: 'live' }
+const LIVE = { mode: OFFLINE ? 'fixture' : 'live' }
 const FIXTURE = { mode: 'fixture' }
 const demoToken = { id: fx.ORG_ID, token: 'fixture-token' }
 
@@ -463,11 +575,11 @@ async function runPayer(width) {
   await connect(s.page)
   await s.page.getByLabel('Company name').waitFor()
   await shot(s, 'app-2-details', LIVE)
-  if (width === 1280) {
+  if (ALL_STATES || width === 1280) {
     await s.page.getByLabel('Company name').fill('Northwind Trading')
     await s.page.getByLabel('Weekly limit (USD)').fill('lots')
     await click(s.page, 'Create organization')
-    await s.page.locator('form p.text-red-700').first().waitFor()
+    await s.page.locator('form p.text-acc2').first().waitFor()
     await shot(s, 'app-2-details-error', { ...LIVE, expectErrors: true })
   }
   await s.page.getByLabel('Company name').fill('Northwind Trading')
@@ -499,7 +611,7 @@ async function runPayer(width) {
     await shot(s, 'dash-live-unauthorized', LIVE)
   }
 
-  if (width === 1280) {
+  if (ALL_STATES || width === 1280) {
     // Live invoice + live lab run: the agent has no ANTHROPIC_API_KEY locally, so both end in "failed".
     await s.page.getByLabel('Invoice text').fill(`From: Acme Ltd <billing@acme.com>\nInvoice INV-2001\nAmount due: 12.50 USD\nPay to (Tempo): ${fx.ACME}`)
     await click(s.page, 'Send to agent')
@@ -521,11 +633,22 @@ async function runPayer(width) {
   await s.page.getByText(/Connect this organization's root wallet/).first().waitFor()
   await shot(s, 'dash', FIXTURE)
   await connect(s.page)
+  if (ALL_STATES || width === 1280) {
+    // The approval's round arrow: the full check and the agent log beside it.
+    const details = s.page.getByRole('button', { name: /Show the check and agent log for Acme Ltd/ })
+    await details.click()
+    await s.page.getByText('Registered payee').first().waitFor()
+    await shot(s, 'dash-approval-details', FIXTURE)
+    await s.page.getByRole('button', { name: /Hide the check and agent log for Acme Ltd/ }).click()
+    await s.page.getByRole('button', { name: /^Blocked/ }).click()
+    await shot(s, 'dash-filter-blocked', FIXTURE)
+    await s.page.getByRole('button', { name: /^All/ }).click()
+  }
   await s.page.getByRole('button', { name: /INV-1043/ }).click()
   await s.page.getByText('report_blocked').first().waitFor()
   await shot(s, 'dash-log', FIXTURE)
   await s.page.getByRole('button', { name: /INV-1043/ }).click()
-  await s.page.getByRole('button', { name: 'Approve', exact: true }).first().click()
+  await s.page.getByRole('button', { name: /^Approve/ }).first().click()
   await s.page.getByText('Allowlist after you sign').waitFor()
   await shot(s, 'dash-review', FIXTURE)
   await click(s.page, 'Sign allowlist update')
@@ -533,13 +656,13 @@ async function runPayer(width) {
   await shot(s, 'dash-approved', FIXTURE)
   await s.browser.close()
 
-  if (width === 1280) {
+  if (ALL_STATES || width === 1280) {
     f = payerFixtures()
     f.st.listChanges = true
     s = await open(width, { payer: f.handler, orgToken: demoToken })
     await s.page.goto(`${WEB}/app/${fx.ORG_ID}`)
     await connect(s.page)
-    await s.page.getByRole('button', { name: 'Approve', exact: true }).first().click()
+    await s.page.getByRole('button', { name: /^Approve/ }).first().click()
     await click(s.page, 'Sign allowlist update')
     await s.page.getByText('The list changed since you reviewed it').waitFor()
     await shot(s, 'dash-list-changed', FIXTURE)
@@ -557,6 +680,14 @@ async function runPayer(width) {
       await shot(s, name, FIXTURE)
       await s.browser.close()
     }
+
+    // The site and the server on different networks: every signing button stays disabled.
+    s = await open(width, { payer: payerFixtures().handler, orgToken: demoToken, serverNetwork: 'mainnet' })
+    await s.page.goto(`${WEB}/app/${fx.ORG_ID}`)
+    await connect(s.page)
+    await s.page.getByText('Wrong network', { exact: true }).waitFor()
+    await shot(s, 'dash-network-mismatch', FIXTURE)
+    await s.browser.close()
 
     s = await open(width)
     await s.page.goto(`${WEB}/app/${fx.ORG_ID}`)
@@ -588,7 +719,7 @@ async function runPayer(width) {
   const href = await s.page.getByRole('link', { name: /View the reverted transaction/ }).getAttribute('href')
   report.push({ note: `lab-4 explorer link ${href === fx.PROOF_URL ? 'matches the testnet proof tx' : 'MISMATCH'}: ${href}` })
 
-  if (width === 1280) {
+  if (ALL_STATES || width === 1280) {
     f.st.hold = true
     await labRun('Changed wallet (lookalike)', 'changed', 'lab-running', 'verify_payee')
     f.st.hold = false
@@ -608,6 +739,7 @@ for (const w of WIDTHS) {
   if (SUITES.has('payer')) await runPayer(w)
 }
 
+fixtureServer?.close()
 console.log(JSON.stringify(report, null, 2))
 const bad = report.filter((r) => r.file && (r.overflow > 0 || r.consoleErrors.length))
 console.log(bad.length ? `\n${bad.length} screenshot(s) with overflow or console errors` : `\nAll ${report.filter((r) => r.file).length} screenshots clean (no overflow, no console errors).`)
