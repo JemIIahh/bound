@@ -106,10 +106,21 @@ export function ShieldIcon({ size = 10 }: { size?: number }) {
 }
 
 /** Wordmark: orange square + Bound. */
+/** Bound's mark: the same square-in-square as the favicon (app/icon.svg), drawn crisp at any size. */
+export function BoundMark({ size = 28 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" className="shrink-0">
+      <rect width="24" height="24" rx="6" fill="#ececea" />
+      <rect x="2.75" y="2.75" width="18.5" height="18.5" rx="5" stroke="#0d0d0d" strokeWidth="1.75" />
+      <rect x="8.25" y="8.25" width="7.5" height="7.5" rx="1.75" fill="#0d0d0d" />
+    </svg>
+  )
+}
+
 export function Logo({ small = false }: { small?: boolean }) {
   return (
-    <span className={`flex items-center gap-2 font-extrabold tracking-[-0.02em] text-fg [font-stretch:115%] ${small ? 'text-lg' : 'text-xl sm:text-[22px]'}`}>
-      <i className="inline-block h-3 w-3 rounded-[3px] bg-acc shadow-[0_0_16px_rgba(255,91,31,0.6)]" />
+    <span className={`flex items-center gap-2.5 font-extrabold tracking-[-0.02em] text-fg [font-stretch:115%] ${small ? 'text-lg' : 'text-xl sm:text-[22px]'}`}>
+      <BoundMark size={small ? 24 : 30} />
       Bound
     </span>
   )

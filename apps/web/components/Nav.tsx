@@ -11,13 +11,13 @@ const LINKS = [
   { href: '/verify', label: 'Check a wallet' },
 ]
 
-/** Top bar: wordmark and section links on the left, the wallet control on the right. */
+/** Full-width top bar: logo on the left edge, section links beside it, the wallet control on the right edge. */
 export function Nav() {
   const pathname = usePathname()
   const home = pathname === '/'
   return (
     <div className={`relative z-30 ${home ? '' : 'border-b border-line2'}`}>
-      <nav className="mx-auto flex h-16 w-full max-w-[1360px] items-center gap-10 px-4 sm:h-[76px] sm:px-8">
+      <nav className="flex h-16 w-full items-center gap-10 px-4 sm:h-[76px] sm:px-8">
         <Link href="/" aria-label="Bound home" className="shrink-0">
           <Logo />
         </Link>
