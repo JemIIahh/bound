@@ -19,7 +19,7 @@ export default function PayeePage() {
         title="Verify once. Every payer sees you."
         lede="Prove that your wallet belongs to your company. Payers who check your address, and the AI agents paying on their behalf, get a match instead of a warning."
       />
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] lg:gap-6">
+      <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] lg:gap-6">
         <PayeeOnboarding />
         <NeedsCard title="What you'll need" items={NEEDS} note="Your progress is saved in this browser, so you can come back once your DNS record is live." />
       </div>
