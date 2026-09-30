@@ -33,8 +33,11 @@ export function Counters({ counters }: { counters: Overview['counters'] }) {
               <i className={`inline-block h-2 w-2 shrink-0 rounded-full ${f.dot}`} />
               {f.label}
             </p>
+            {/* same box height in every card (a two-character figure's size), figures sit on its bottom edge */}
             <div className="@container mt-4 sm:mt-6">
-              <Figure value={f.value} max={wide ? 64 : 64} className={f.key === 'blocked' ? 'text-acc' : 'text-fg'} />
+              <div style={{ height: `min(64px, ${(100 / 1.2).toFixed(2)}cqw)` }} className="flex items-end">
+                <Figure value={f.value} max={64} className={f.key === 'blocked' ? 'text-acc' : 'text-fg'} />
+              </div>
             </div>
             <p className={`mt-4 text-sm text-fg3 ${wide ? '' : 'hidden sm:block'}`}>{f.sub}</p>
           </div>
