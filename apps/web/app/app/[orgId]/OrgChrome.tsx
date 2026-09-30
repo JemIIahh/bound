@@ -8,7 +8,7 @@ import { periodLabel, usd } from '@/lib/format'
 import type { OverviewState } from '@/lib/hooks'
 import { card, ghostBtn, primaryBtn, sectionLabel, short } from '@/components/ui'
 
-const link = 'underline decoration-black/30 underline-offset-4 hover:text-ink'
+const link = 'underline decoration-fg3/50 underline-offset-4 hover:text-fg'
 
 /** Page title block shared by the dashboard and the lab: org name, root, key, limit. */
 export function OrgHeader({ o, eyebrow, action }: { o: Overview; eyebrow: string; action?: ReactNode }) {
@@ -18,8 +18,8 @@ export function OrgHeader({ o, eyebrow, action }: { o: Overview; eyebrow: string
     <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
         <p className={`${sectionLabel} mb-4`}>{eyebrow}</p>
-        <h1 className="font-display text-4xl font-medium leading-[1.1] tracking-[-0.02em] text-ink [overflow-wrap:anywhere] sm:text-5xl">{o.org.name}</h1>
-        <p className="mt-4 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-graphite">
+        <h1 className="font-display text-4xl font-medium leading-[1.1] tracking-[-0.02em] text-fg [overflow-wrap:anywhere] sm:text-5xl">{o.org.name}</h1>
+        <p className="mt-4 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[12.5px] text-fg3">
           <span>
             Root{' '}
             <a href={addressUrl(o.org.rootAddress)} target="_blank" rel="noreferrer" className={link}>
@@ -73,9 +73,9 @@ export function KeyNotice({ o }: { o: Overview }) {
 
 function Notice({ title, tone, children }: { title: string; tone?: 'red'; children: ReactNode }) {
   return (
-    <div className={`${card} flex flex-col gap-2 text-sm leading-relaxed text-graphite`} role="status">
-      <p className="flex items-center gap-2.5 text-base text-ink">
-        <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${tone === 'red' ? 'bg-red-600' : 'bg-amber-500'}`} />
+    <div className={`${card} flex flex-col gap-2 text-sm leading-relaxed text-fg3`} role="status">
+      <p className="flex items-center gap-2.5 text-base text-fg">
+        <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${tone === 'red' ? 'bg-acc' : 'bg-amber'}`} />
         {title}
       </p>
       {children}
@@ -103,12 +103,12 @@ export function OrgGate({ orgId, state }: { orgId: string; state: OverviewState 
     <main className="mx-auto w-full max-w-xl flex-1 px-5 py-16 sm:px-8">
       <div className={`${card} flex flex-col gap-3`}>
         <span className={sectionLabel}>Organization</span>
-        <p className="flex items-center gap-3 font-display text-2xl tracking-[-0.01em] text-ink">
-          {!settled && !error && <span className="live-dot inline-block h-1.5 w-1.5 rounded-full bg-ink" />}
+        <p className="flex items-center gap-3 font-display text-2xl tracking-[-0.01em] text-fg">
+          {!settled && !error && <span className="live-dot inline-block h-1.5 w-1.5 rounded-full bg-fg" />}
           {title}
         </p>
-        <p className="font-mono text-[11px] text-graphite [overflow-wrap:anywhere]">{orgId}</p>
-        {body && <div className="text-sm leading-relaxed text-graphite">{body}</div>}
+        <p className="font-mono text-[12.5px] text-fg3 [overflow-wrap:anywhere]">{orgId}</p>
+        {body && <div className="text-sm leading-relaxed text-fg3">{body}</div>}
         {settled && (
           <Link href="/app" className={`${ghostBtn} mt-2`}>
             Your organizations

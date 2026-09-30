@@ -68,7 +68,7 @@ export function OrgSetup() {
       summary: wallet ? short(wallet) : undefined,
       children: (
         <div className="flex flex-col gap-4">
-          <p className="text-sm leading-relaxed text-ink">
+          <p className="text-sm leading-relaxed text-fg">
             This wallet becomes your organization&apos;s root account. You&apos;ll sign the agent&apos;s key and every payee approval with it.
           </p>
           <ConnectPanel />
@@ -108,15 +108,15 @@ export function OrgSetup() {
       <div className={card}>
         <div className="mb-6 flex items-center justify-between gap-3">
           <span className={sectionLabel}>New organization</span>
-          <span className="font-mono text-[11px] text-graphite">
+          <span className="font-mono text-[12.5px] text-fg3">
             Step {active + 1} of {steps.length}
           </span>
         </div>
         <Stepper steps={steps} />
         {setup && (
-          <div className="mt-6 flex items-center justify-between gap-3 border-t border-black/10 pt-4 font-mono text-[11px] text-graphite">
+          <div className="mt-6 flex items-center justify-between gap-3 border-t border-line2 pt-4 font-mono text-[12.5px] text-fg3">
             <span className="truncate">{setup.orgId}</span>
-            <button onClick={() => save(null)} className="shrink-0 underline decoration-black/30 underline-offset-4 transition hover:text-ink">
+            <button onClick={() => save(null)} className="shrink-0 underline decoration-fg3/50 underline-offset-4 transition hover:text-fg">
               Start over
             </button>
           </div>
@@ -226,7 +226,7 @@ function AuthorizeStep({ setup, blocked, onSent, onAuthorized }: { setup: Setup;
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm leading-relaxed text-ink">
+      <p className="text-sm leading-relaxed text-fg">
         One transaction from your wallet gives the agent its own key. Until you approve a payee, the key can only send money back to your own account.
       </p>
       <div>
@@ -244,7 +244,7 @@ function AuthorizeStep({ setup, blocked, onSent, onAuthorized }: { setup: Setup;
           </button>
         )}
         {setup.txHash && (
-          <a href={txUrl(setup.txHash)} target="_blank" rel="noreferrer" className="self-start font-mono text-[11px] text-graphite underline decoration-black/30 underline-offset-4 hover:text-ink">
+          <a href={txUrl(setup.txHash)} target="_blank" rel="noreferrer" className="self-start font-mono text-[12.5px] text-fg3 underline decoration-fg3/50 underline-offset-4 hover:text-fg">
             Authorization {short(setup.txHash)} ↗
           </a>
         )}
@@ -289,17 +289,17 @@ function SavedOrgs() {
       <span className={sectionLabel}>Your organizations</span>
       <ul className="mt-3 flex flex-col">
         {orgs.map((o, i) => (
-          <li key={o.id} className={i ? 'border-t border-black/10' : ''}>
+          <li key={o.id} className={i ? 'border-t border-line2' : ''}>
             <Link href={`/app/${o.id}`} className="group flex items-center justify-between gap-4 py-3">
               <div className="min-w-0">
-                <p className="truncate text-sm text-ink group-hover:underline group-hover:decoration-black/30 group-hover:underline-offset-4">
+                <p className="truncate text-sm text-fg group-hover:underline group-hover:decoration-fg3/50 group-hover:underline-offset-4">
                   {o.name ?? (o.failed ? 'Unavailable' : 'Loading…')}
                 </p>
-                <p className="truncate font-mono text-[11px] text-graphite">{o.id}</p>
+                <p className="truncate font-mono text-[12.5px] text-fg3">{o.id}</p>
               </div>
-              <span className="flex shrink-0 items-center gap-3 font-mono text-[11px] text-graphite">
+              <span className="flex shrink-0 items-center gap-3 font-mono text-[12.5px] text-fg3">
                 {o.name && (o.authorized ? 'Key authorized' : 'Setup unfinished')}
-                <span aria-hidden="true" className="text-ink">
+                <span aria-hidden="true" className="text-fg">
                   →
                 </span>
               </span>

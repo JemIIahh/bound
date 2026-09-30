@@ -94,9 +94,9 @@ export function InvoiceInbox({
         <div className="flex flex-wrap items-center gap-3">
           <input ref={fileRef} type="file" accept="application/pdf" onChange={pick} className="sr-only" tabIndex={-1} aria-hidden="true" />
           {pdf ? (
-            <span className="flex min-w-0 items-center gap-2 font-mono text-[11px] text-ink">
+            <span className="flex min-w-0 items-center gap-2 font-mono text-[12.5px] text-fg">
               <span className="truncate">{pdf.name}</span>
-              <button type="button" onClick={() => setPdf(null)} className="shrink-0 text-graphite underline decoration-black/30 underline-offset-4 hover:text-ink">
+              <button type="button" onClick={() => setPdf(null)} className="shrink-0 text-fg3 underline decoration-fg3/50 underline-offset-4 hover:text-fg">
                 Remove
               </button>
             </span>
@@ -113,9 +113,9 @@ export function InvoiceInbox({
         {error && <p className={errorText}>{error}</p>}
       </form>
 
-      <div className="mt-6 border-t border-black/10">
+      <div className="mt-6 border-t border-line2">
         {invoices.length === 0 ? (
-          <p className="pt-4 text-sm text-graphite">No invoices yet. The agent verifies every payee before any money moves.</p>
+          <p className="pt-4 text-sm text-fg3">No invoices yet. The agent verifies every payee before any money moves.</p>
         ) : (
           <ul className="flex flex-col">
             {invoices.map((inv, i) => (
@@ -181,21 +181,21 @@ function InvoiceRow({
   const title = inv.payeeName ?? (isOpenStatus(inv.status) ? 'Reading invoice…' : 'Unread invoice')
 
   return (
-    <li className={first ? '' : 'border-t border-black/10'}>
+    <li className={first ? '' : 'border-t border-line2'}>
       <button onClick={onToggle} aria-expanded={open} className="group flex w-full items-start justify-between gap-4 pt-4 pb-3 text-left">
         <div className="min-w-0">
-          <p className="truncate text-sm text-ink group-hover:underline group-hover:decoration-black/30 group-hover:underline-offset-4">{title}</p>
-          <p className="mt-0.5 truncate font-mono text-[11px] text-graphite">{meta}</p>
+          <p className="truncate text-sm text-fg group-hover:underline group-hover:decoration-fg3/50 group-hover:underline-offset-4">{title}</p>
+          <p className="mt-0.5 truncate font-mono text-[12.5px] text-fg3">{meta}</p>
         </div>
         <StatusBadge status={inv.status} />
       </button>
       {(o.text || o.tx) && (
-        <p className="-mt-1 pb-3 text-xs leading-relaxed text-graphite">
+        <p className="-mt-1 pb-3 text-xs leading-relaxed text-fg3">
           {o.text}
           {o.tx && (
             <>
               {' '}
-              <a href={txUrl(o.tx)} target="_blank" rel="noreferrer" className="font-mono text-[11px] underline decoration-black/30 underline-offset-4 hover:text-ink">
+              <a href={txUrl(o.tx)} target="_blank" rel="noreferrer" className="font-mono text-[12.5px] underline decoration-fg3/50 underline-offset-4 hover:text-fg">
                 {short(o.tx)} ↗
               </a>
             </>
@@ -230,7 +230,7 @@ function InvoiceLog({ orgId, invoiceId, status }: { orgId: string; invoiceId: st
   }, [orgId, invoiceId, live, status])
 
   return (
-    <div className="mb-4 flex flex-col gap-4 border-t border-dashed border-black/10 pt-4 sm:pl-4">
+    <div className="mb-4 flex flex-col gap-4 border-t border-dashed border-line2 pt-4 sm:pl-4">
       {detail?.verdict && (
         <div>
           <VerdictBadge verdict={detail.verdict.verdict} />
@@ -242,10 +242,10 @@ function InvoiceLog({ orgId, invoiceId, status }: { orgId: string; invoiceId: st
         detail.agentLog.length || live ? (
           <AgentLog entries={detail.agentLog} live={live} />
         ) : (
-          <p className="text-sm text-graphite">The agent hasn&apos;t logged anything for this invoice.</p>
+          <p className="text-sm text-fg3">The agent hasn&apos;t logged anything for this invoice.</p>
         )
       ) : (
-        !error && <p className="text-sm text-graphite">Loading…</p>
+        !error && <p className="text-sm text-fg3">Loading…</p>
       )}
     </div>
   )

@@ -52,7 +52,7 @@ export function Dashboard({ orgId }: { orgId: string }) {
         }
       />
       <NetworkNotice check={network} />
-      {error && <p className="font-mono text-[11px] text-graphite">Couldn&apos;t refresh: {error} Retrying.</p>}
+      {error && <p className="font-mono text-[12.5px] text-fg3">Couldn&apos;t refresh: {error} Retrying.</p>}
       <KeyNotice o={o} />
       <Counters counters={o.counters} />
 
@@ -105,33 +105,33 @@ function Payees({ o }: { o: Overview }) {
         <span id="payees-label" className={sectionLabel}>
           Payees
         </span>
-        <span className={`font-mono text-[11px] tabular-nums ${full ? 'text-amber-900' : 'text-graphite'}`} title="Recipients on the agent key's allowlist">
+        <span className={`font-mono text-[12.5px] tabular-nums ${full ? 'text-amber' : 'text-fg3'}`} title="Recipients on the agent key's allowlist">
           {used} / {max}
         </span>
       </div>
       {full && (
-        <p className="mt-3 flex items-start gap-2 text-xs leading-relaxed text-amber-900">
-          <span className="mt-[5px] inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+        <p className="mt-3 flex items-start gap-2 text-xs leading-relaxed text-amber">
+          <span className="mt-[5px] inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber" />
           Nearly full. Tempo allows at most {max} recipients per agent key.
         </p>
       )}
       {rows.length === 0 ? (
-        <p className="mt-3 text-sm leading-relaxed text-graphite">No payees yet. Until you approve one, the agent can only pay your own account.</p>
+        <p className="mt-3 text-sm leading-relaxed text-fg3">No payees yet. Until you approve one, the agent can only pay your own account.</p>
       ) : (
         <ul className="mt-3 flex flex-col">
           {rows.map((r, i) => (
-            <li key={r.wallet} className={`py-3 ${i ? 'border-t border-black/10' : ''}`}>
+            <li key={r.wallet} className={`py-3 ${i ? 'border-t border-line2' : ''}`}>
               <div className="flex items-baseline justify-between gap-3">
-                <span className="min-w-0 truncate text-sm text-ink">{r.label}</span>
-                <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-graphite">{r.note}</span>
+                <span className="min-w-0 truncate text-sm text-fg">{r.label}</span>
+                <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-fg3">{r.note}</span>
               </div>
-              <p className="mt-0.5 font-mono text-[11px] text-graphite [overflow-wrap:anywhere]">{r.wallet}</p>
+              <p className="mt-0.5 font-mono text-[12.5px] text-fg3 [overflow-wrap:anywhere]">{r.wallet}</p>
             </li>
           ))}
         </ul>
       )}
       {hasRoot && (
-        <p className="mt-3 border-t border-black/10 pt-3 font-mono text-[11px] leading-relaxed text-graphite">
+        <p className="mt-3 border-t border-line2 pt-3 font-mono text-[12.5px] leading-relaxed text-fg3">
           Also allowlisted: your root account, so the key starts out able to pay no one else.
         </p>
       )}

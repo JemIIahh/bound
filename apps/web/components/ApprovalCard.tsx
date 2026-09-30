@@ -142,19 +142,19 @@ export function ApprovalCard({
     <article className={card} aria-label={`Approval for ${approval.label}`}>
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <span className={sectionLabel}>{result?.kind === 'approved' ? 'Approved' : result?.kind === 'rejected' ? 'Rejected' : 'Approval needed'}</span>
-        <span className="font-mono text-[11px] text-graphite">{[invoice?.invoiceNo, amount].filter(Boolean).join(' · ')}</span>
+        <span className="font-mono text-[12.5px] text-fg3">{[invoice?.invoiceNo, amount].filter(Boolean).join(' · ')}</span>
       </div>
-      <p className="mt-2 font-display text-2xl tracking-[-0.01em] text-ink [overflow-wrap:anywhere]">{approval.label}</p>
-      <p className="mt-1 font-mono text-[11px] text-graphite [overflow-wrap:anywhere]">{approval.wallet}</p>
+      <p className="mt-2 font-display text-2xl tracking-[-0.01em] text-fg [overflow-wrap:anywhere]">{approval.label}</p>
+      <p className="mt-1 font-mono text-[12.5px] text-fg3 [overflow-wrap:anywhere]">{approval.wallet}</p>
 
-      <div className="mt-5 border-t border-black/10 pt-5">
-        {approval.verdict ? <VerdictCard result={approval.verdict} framed={false} /> : <p className="text-sm text-graphite">Bound has no stored check for this payee.</p>}
+      <div className="mt-5 border-t border-line2 pt-5">
+        {approval.verdict ? <VerdictCard result={approval.verdict} framed={false} /> : <p className="text-sm text-fg3">Bound has no stored check for this payee.</p>}
       </div>
 
       {result ? (
         <Outcome result={result} txHash={txHash} onDismiss={onDismiss} />
       ) : prepared && (phase === 'review' || busy) && phase !== 'rejecting' ? (
-        <div className="mt-5 border-t border-black/10 pt-5">
+        <div className="mt-5 border-t border-line2 pt-5">
           <span className={sectionLabel}>Allowlist after you sign</span>
           <p className={`mt-2 ${hint}`}>
             Tempo replaces the agent key&apos;s whole recipient list with these {prepared.recipients.length} wallets. The agent can pay only them.
@@ -165,15 +165,15 @@ export function ApprovalCard({
               const carried = prepared.carried.some((c) => same(c, r))
               const label = isNew ? approval.label : same(r, rootAddress) ? 'Your root account' : labelFor(r)
               return (
-                <li key={r} className={`flex flex-col gap-0.5 py-2.5 ${i ? 'border-t border-black/10' : ''}`}>
+                <li key={r} className={`flex flex-col gap-0.5 py-2.5 ${i ? 'border-t border-line2' : ''}`}>
                   <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                    <span className="text-sm text-ink">{label ?? 'Allowlisted wallet'}</span>
-                    {isNew && <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink">Adding</span>}
+                    <span className="text-sm text-fg">{label ?? 'Allowlisted wallet'}</span>
+                    {isNew && <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-fg">Adding</span>}
                   </div>
-                  <span className="font-mono text-[11px] text-graphite [overflow-wrap:anywhere]">{r}</span>
+                  <span className="font-mono text-[12.5px] text-fg3 [overflow-wrap:anywhere]">{r}</span>
                   {carried && (
-                    <span className="mt-1 flex items-center gap-2 text-xs text-amber-900">
-                      <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                    <span className="mt-1 flex items-center gap-2 text-xs text-amber">
+                      <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber" />
                       Also added because another approval is pending
                     </span>
                   )}
@@ -182,7 +182,7 @@ export function ApprovalCard({
             })}
           </ul>
           <div className="mt-4 flex flex-col gap-2">
-            {notice && <p className="text-sm text-amber-900">{notice}</p>}
+            {notice && <p className="text-sm text-amber">{notice}</p>}
             {txHash && phase === 'review' ? (
               <button onClick={confirmAgain} className={primaryBtn}>
                 Check the sent update again
@@ -197,7 +197,7 @@ export function ApprovalCard({
             </button>
             {rootMessage && <p className={hint}>{rootMessage}</p>}
             {txHash && (
-              <a href={txUrl(txHash)} target="_blank" rel="noreferrer" className="self-start font-mono text-[11px] text-graphite underline decoration-black/30 underline-offset-4 hover:text-ink">
+              <a href={txUrl(txHash)} target="_blank" rel="noreferrer" className="self-start font-mono text-[12.5px] text-fg3 underline decoration-fg3/50 underline-offset-4 hover:text-fg">
                 Allowlist update {short(txHash)} ↗
               </a>
             )}
@@ -205,7 +205,7 @@ export function ApprovalCard({
           </div>
         </div>
       ) : (
-        <div className="mt-5 flex flex-col gap-2 border-t border-black/10 pt-5">
+        <div className="mt-5 flex flex-col gap-2 border-t border-line2 pt-5">
           {approvable ? (
             <>
               <p className={hint}>Approving adds this wallet to your agent key&apos;s allowlist on Tempo. You sign the update with your root wallet, then the agent pays the invoice.</p>
@@ -215,7 +215,7 @@ export function ApprovalCard({
               {rootMessage && <p className={hint}>{rootMessage}</p>}
             </>
           ) : (
-            <p className="text-sm text-ink">
+            <p className="text-sm text-fg">
               {verdict ? `${VERDICTS[verdict].label} payees can't be approved.` : "This payee can't be approved."} Reject it so the agent doesn&apos;t pay.
             </p>
           )}
@@ -232,7 +232,7 @@ export function ApprovalCard({
 function Outcome({ result, txHash, onDismiss }: { result: { kind: 'approved'; payment: PayResult } | { kind: 'rejected' }; txHash: Hex | null; onDismiss: () => void }) {
   let text: string
   let payTx: Hex | undefined
-  const dot = result.kind === 'rejected' ? 'bg-graphite' : result.payment.status === 'paid' ? 'bg-emerald-600' : 'bg-amber-500'
+  const dot = result.kind === 'rejected' ? 'bg-graphite' : result.payment.status === 'paid' ? 'bg-ok' : 'bg-amber'
   if (result.kind === 'rejected') text = "Rejected. The agent won't pay this invoice."
   else if (result.payment.status === 'paid') {
     text = 'Approved and paid.'
@@ -241,19 +241,19 @@ function Outcome({ result, txHash, onDismiss }: { result: { kind: 'approved'; pa
   else text = `Approved. ${PAY_REASON[result.payment.reason ?? ''] ?? `Payment ${result.payment.status}.`}`
 
   return (
-    <div className="mt-5 flex flex-col gap-3 border-t border-black/10 pt-5">
-      <p className="flex items-start gap-2.5 text-sm text-ink">
+    <div className="mt-5 flex flex-col gap-3 border-t border-line2 pt-5">
+      <p className="flex items-start gap-2.5 text-sm text-fg">
         <span className={`mt-[7px] inline-block h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
         {text}
       </p>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-graphite">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[12.5px] text-fg3">
         {txHash && (
-          <a href={txUrl(txHash)} target="_blank" rel="noreferrer" className="underline decoration-black/30 underline-offset-4 hover:text-ink">
+          <a href={txUrl(txHash)} target="_blank" rel="noreferrer" className="underline decoration-fg3/50 underline-offset-4 hover:text-fg">
             Allowlist update {short(txHash)} ↗
           </a>
         )}
         {payTx && (
-          <a href={txUrl(payTx)} target="_blank" rel="noreferrer" className="underline decoration-black/30 underline-offset-4 hover:text-ink">
+          <a href={txUrl(payTx)} target="_blank" rel="noreferrer" className="underline decoration-fg3/50 underline-offset-4 hover:text-fg">
             Payment {short(payTx)} ↗
           </a>
         )}

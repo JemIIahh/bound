@@ -1,31 +1,28 @@
 import type { Metadata } from 'next'
-import { sectionLabel } from '@/components/ui'
+import { NeedsCard } from '@/components/NeedsCard'
+import { PageHead } from '@/components/PageHead'
+import { wrap } from '@/components/ui'
 import { PayeeOnboarding } from './PayeeOnboarding'
 
 export const metadata: Metadata = { title: 'Get verified' }
 
-const NEEDS = ["Your company's receiving wallet", "Access to your domain's DNS", 'An LEI, optional, for level 2']
+const NEEDS = [
+  { label: "Your company's receiving wallet", text: 'The wallet your company is paid to. You sign with it; Bound never asks for funds or keys.' },
+  { label: "Access to your domain's DNS", text: 'You add one TXT record to prove the domain is yours.' },
+  { label: 'An LEI, optional', text: 'A Legal Entity Identifier raises your verification to level 2.' },
+]
 
 export default function PayeePage() {
   return (
-    <main className="mx-auto grid w-full max-w-6xl flex-1 grid-cols-1 items-start gap-10 px-5 py-10 sm:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-20">
-      <section className="lg:sticky lg:top-10 lg:pt-6">
-        <p className={`${sectionLabel} mb-6`}>For payees</p>
-        <h1 className="font-display text-4xl font-medium leading-[1.12] tracking-[-0.02em] text-ink sm:text-5xl">Verify once. Every payer sees you.</h1>
-        <p className="mt-6 max-w-md text-[15px] leading-relaxed text-graphite">
-          Prove that your wallet belongs to your company. Payers who check your address, and the AI agents paying on their behalf, get a match
-          instead of a warning.
-        </p>
-        <ul className="mt-9 flex flex-col gap-3 font-mono text-xs uppercase tracking-wider text-graphite">
-          {NEEDS.map((n) => (
-            <li key={n} className="flex items-center gap-3">
-              <span className="h-px w-6 bg-ink/40" />
-              {n}
-            </li>
-          ))}
-        </ul>
-      </section>
-      <PayeeOnboarding />
+    <main className={`${wrap} flex flex-1 flex-col gap-8 py-8 sm:gap-12 sm:py-12`}>
+      <PageHead
+        title="Verify once. Every payer sees you."
+        lede="Prove that your wallet belongs to your company. Payers who check your address, and the AI agents paying on their behalf, get a match instead of a warning."
+      />
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] lg:gap-6">
+        <PayeeOnboarding />
+        <NeedsCard title="What you'll need" items={NEEDS} note="Your progress is saved in this browser, so you can come back once your DNS record is live." />
+      </div>
     </main>
   )
 }

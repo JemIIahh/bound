@@ -8,7 +8,7 @@ import { BLOCK_REASONS } from './InvoiceStatus'
 import { VERDICTS, type Tone } from './VerdictCard'
 import { card, sectionLabel, short, smallBtn } from './ui'
 
-const DOT: Record<Tone, string> = { green: 'bg-emerald-600', amber: 'bg-amber-500', grey: 'bg-graphite', red: 'bg-red-600' }
+const DOT: Record<Tone, string> = { green: 'bg-ok', amber: 'bg-amber', grey: 'bg-graphite', red: 'bg-acc' }
 
 const TONE: Record<string, Tone> = {
   paid: 'green',
@@ -86,19 +86,19 @@ export function EventFeed({ events, invoices, pins }: { events: OrgEvent[]; invo
         Activity
       </span>
       {events.length === 0 ? (
-        <p className="mt-3 text-sm text-graphite">Nothing yet. Payments, blocks and approvals show up here.</p>
+        <p className="mt-3 text-sm text-fg3">Nothing yet. Payments, blocks and approvals show up here.</p>
       ) : (
         <ul className="mt-3 flex flex-col">
           {shown.map((e, i) => (
-            <li key={e.id} className={`flex gap-3 py-3 ${i ? 'border-t border-black/10' : ''}`}>
+            <li key={e.id} className={`flex gap-3 py-3 ${i ? 'border-t border-line2' : ''}`}>
               <span className={`mt-[7px] inline-block h-1.5 w-1.5 shrink-0 rounded-full ${DOT[TONE[e.kind] ?? 'grey']}`} />
               <div className="min-w-0 flex-1">
-                <p className="text-sm leading-relaxed text-ink [overflow-wrap:anywhere]">{describe(e, payeeOf(e))}</p>
-                <p className="mt-0.5 flex flex-wrap gap-x-3 font-mono text-[11px] text-graphite">
+                <p className="text-sm leading-relaxed text-fg [overflow-wrap:anywhere]">{describe(e, payeeOf(e))}</p>
+                <p className="mt-0.5 flex flex-wrap gap-x-3 font-mono text-[12.5px] text-fg3">
                   <span>{ago(e.createdAt)}</span>
                   {e.detail?.lab === true && <span>Lab</span>}
                   {e.txHash && (
-                    <a href={txUrl(e.txHash)} target="_blank" rel="noreferrer" className="underline decoration-black/30 underline-offset-4 hover:text-ink">
+                    <a href={txUrl(e.txHash)} target="_blank" rel="noreferrer" className="underline decoration-fg3/50 underline-offset-4 hover:text-fg">
                       {short(e.txHash)} ↗
                     </a>
                   )}
@@ -109,7 +109,7 @@ export function EventFeed({ events, invoices, pins }: { events: OrgEvent[]; invo
         </ul>
       )}
       {events.length > 12 && (
-        <div className="mt-2 border-t border-black/10 pt-4">
+        <div className="mt-2 border-t border-line2 pt-4">
           <button onClick={() => setAll((v) => !v)} className={smallBtn}>
             {all ? 'Show less' : `Show all ${events.length}`}
           </button>

@@ -87,15 +87,15 @@ export function Lab({ orgId }: { orgId: string }) {
     <main className="mx-auto grid w-full max-w-6xl flex-1 grid-cols-1 items-start gap-10 px-5 py-10 sm:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:grid-rows-[auto_1fr] lg:gap-x-20">
       <section className="lg:col-start-1 lg:row-start-1 lg:pt-6">
         <p className={`${sectionLabel} mb-6`}>Attack lab · {o.org.name}</p>
-        <h1 className="font-display text-4xl font-medium leading-[1.12] tracking-[-0.02em] text-ink sm:text-5xl">Try to make your agent pay a stranger.</h1>
-        <p className="mt-6 max-w-md text-[15px] leading-relaxed text-graphite">
+        <h1 className="font-display text-4xl font-medium leading-[1.12] tracking-[-0.02em] text-fg sm:text-5xl">Try to make your agent pay a stranger.</h1>
+        <p className="mt-6 max-w-md text-[15px] leading-relaxed text-fg3">
           Send the agent an invoice an attacker wrote. With the guard on, Bound checks the payee before any money moves. Switch the guard off and the agent
           sends whatever it&apos;s told. Tempo still refuses any wallet you never approved.
         </p>
-        <p className="mt-6 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-graphite">
+        <p className="mt-6 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[12.5px] text-fg3">
           <span>Agent key {short(o.org.agentKeyAddress)}</span>
           <span>{o.capacity.used} allowlisted</span>
-          <Link href={`/app/${o.org.id}`} className="underline decoration-black/30 underline-offset-4 hover:text-ink">
+          <Link href={`/app/${o.org.id}`} className="underline decoration-fg3/50 underline-offset-4 hover:text-fg">
             Dashboard
           </Link>
         </p>
@@ -106,8 +106,8 @@ export function Lab({ orgId }: { orgId: string }) {
         {labDisabled ? (
           <div className={`${card} flex flex-col gap-2`} role="status">
             <span className={sectionLabel}>Attack lab</span>
-            <p className="font-display text-2xl tracking-[-0.01em] text-ink">Attack lab is disabled on this network</p>
-            <p className="text-sm leading-relaxed text-graphite">The server only runs the lab on testnet, unless it was started with the lab enabled.</p>
+            <p className="font-display text-2xl tracking-[-0.01em] text-fg">Attack lab is disabled on this network</p>
+            <p className="text-sm leading-relaxed text-fg3">The server only runs the lab on testnet, unless it was started with the lab enabled.</p>
           </div>
         ) : (
           <form onSubmit={run} className={`${card} flex flex-col gap-5`} noValidate>
@@ -122,7 +122,7 @@ export function Lab({ orgId }: { orgId: string }) {
                     disabled={!!p.missing}
                     title={p.missing ? `Set ${p.missing} to use this preset` : undefined}
                     aria-pressed={presetKey === p.key}
-                    className={`${smallBtn} aria-pressed:border-ink aria-pressed:bg-ink aria-pressed:text-paper`}
+                    className={`${smallBtn} aria-pressed:border-ink aria-pressed:bg-fg aria-pressed:text-bg`}
                   >
                     {p.title}
                   </button>
@@ -141,7 +141,7 @@ export function Lab({ orgId }: { orgId: string }) {
             </div>
 
             <div>
-              <label htmlFor="labText" className="mb-1.5 block text-sm text-ink">
+              <label htmlFor="labText" className="mb-1.5 block text-sm text-fg">
                 Invoice
               </label>
               <textarea
@@ -175,9 +175,9 @@ export function Lab({ orgId }: { orgId: string }) {
           Runs
         </span>
         {labRuns.length === 0 ? (
-          <p className="mt-3 text-sm text-graphite">No lab runs yet. Each run shows its own result here; lab runs don&apos;t count toward the dashboard totals.</p>
+          <p className="mt-3 text-sm text-fg3">No lab runs yet. Each run shows its own result here; lab runs don&apos;t count toward the dashboard totals.</p>
         ) : (
-          <ul className="mt-3 flex flex-col border-t border-black/10">
+          <ul className="mt-3 flex flex-col border-t border-line2">
             {labRuns.map((inv) => (
               <RunRow
                 key={inv.id}
@@ -197,9 +197,9 @@ export function Lab({ orgId }: { orgId: string }) {
 
 function GuardSwitch({ off, onChange }: { off: boolean; onChange: (off: boolean) => void }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-t border-black/10 pt-5">
+    <div className="flex items-start justify-between gap-4 border-t border-line2 pt-5">
       <div className="min-w-0">
-        <p id="guard-label" className="text-sm text-ink">
+        <p id="guard-label" className="text-sm text-fg">
           Guard off
         </p>
         <p className={`mt-1 ${hint}`}>Skip Bound&apos;s checks. The agent sends the payment directly, and only Tempo&apos;s key rules remain.</p>
@@ -210,7 +210,7 @@ function GuardSwitch({ off, onChange }: { off: boolean; onChange: (off: boolean)
         aria-checked={off}
         aria-labelledby="guard-label"
         onClick={() => onChange(!off)}
-        className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full border transition ${off ? 'border-ink bg-ink' : 'border-black/15 bg-black/[0.06]'}`}
+        className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full border transition ${off ? 'border-ink bg-fg' : 'border-line bg-black/[0.06]'}`}
       >
         <span className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full transition-all ${off ? 'left-[22px] bg-paper' : 'left-[3px] bg-white shadow-sm'}`} />
       </button>
@@ -222,13 +222,13 @@ function RunRow({ inv, events, meta, active, onSelect }: { inv: OrgInvoice; even
   const p = meta?.preset ? PRESETS.find((x) => x.key === meta.preset) : undefined
   const info = [inv.invoiceNo, usd(inv.amountBase), meta?.guardOff ? 'Guard off' : null, ago(inv.createdAt)].filter(Boolean).join(' · ')
   return (
-    <li className="border-b border-black/10">
+    <li className="border-b border-line2">
       <button onClick={onSelect} aria-current={active ? 'true' : undefined} className="group flex w-full items-start justify-between gap-4 py-3 text-left">
         <div className="min-w-0">
-          <p className={`truncate text-sm text-ink ${active ? 'underline decoration-1 underline-offset-4' : 'group-hover:underline group-hover:decoration-black/30 group-hover:underline-offset-4'}`}>
+          <p className={`truncate text-sm text-fg ${active ? 'underline decoration-1 underline-offset-4' : 'group-hover:underline group-hover:decoration-fg3/50 group-hover:underline-offset-4'}`}>
             {p?.title ?? inv.payeeName ?? 'Custom invoice'}
           </p>
-          <p className="mt-0.5 truncate font-mono text-[11px] text-graphite">{info}</p>
+          <p className="mt-0.5 truncate font-mono text-[12.5px] text-fg3">{info}</p>
         </div>
         {events.some((e) => e.kind === 'chain_rejected') ? (
           <Badge tone="red">Rejected by Tempo</Badge>
@@ -323,33 +323,33 @@ function RunResult({ orgId, invoiceId, meta }: { orgId: string; invoiceId: strin
         <span id="result-label" className={sectionLabel}>
           Result
         </span>
-        <span className="font-mono text-[11px] text-graphite">{[p?.title ?? d?.invoiceNo, meta?.guardOff && p?.key !== 'injected' ? 'Guard off' : null].filter(Boolean).join(' · ')}</span>
+        <span className="font-mono text-[12.5px] text-fg3">{[p?.title ?? d?.invoiceNo, meta?.guardOff && p?.key !== 'injected' ? 'Guard off' : null].filter(Boolean).join(' · ')}</span>
       </div>
 
-      <div className="mt-5 border-t border-black/10 pt-5">{d ? <OutcomeView out={out} d={d} orgId={orgId} /> : <Working />}</div>
+      <div className="mt-5 border-t border-line2 pt-5">{d ? <OutcomeView out={out} d={d} orgId={orgId} /> : <Working />}</div>
       {error && <p className={`mt-3 ${errorText}`}>{error}</p>}
 
-      <div className="mt-6 border-t border-black/10 pt-5">
+      <div className="mt-6 border-t border-line2 pt-5">
         <span className={sectionLabel}>Agent log</span>
         <div className="mt-4">
-          {d && !d.agentLog.length && !live ? <p className="text-sm text-graphite">The agent logged nothing for this run.</p> : <AgentLog entries={d?.agentLog ?? []} />}
+          {d && !d.agentLog.length && !live ? <p className="text-sm text-fg3">The agent logged nothing for this run.</p> : <AgentLog entries={d?.agentLog ?? []} />}
         </div>
       </div>
-      <p className="mt-5 border-t border-black/10 pt-4 font-mono text-[11px] text-graphite">{invoiceId}</p>
+      <p className="mt-5 border-t border-line2 pt-4 font-mono text-[12.5px] text-fg3">{invoiceId}</p>
     </section>
   )
 }
 
 function Working() {
   return (
-    <p className="flex items-center gap-3 font-display text-xl tracking-[-0.01em] text-ink">
-      <span className="live-dot inline-block h-1.5 w-1.5 rounded-full bg-ink" />
+    <p className="flex items-center gap-3 font-display text-xl tracking-[-0.01em] text-fg">
+      <span className="live-dot inline-block h-1.5 w-1.5 rounded-full bg-fg" />
       The agent is working…
     </p>
   )
 }
 
-const headline = 'font-display text-2xl leading-snug tracking-[-0.01em] text-ink'
+const headline = 'font-display text-2xl leading-snug tracking-[-0.01em] text-fg'
 const explorerLink = (url: string, label: string) => (
   <a href={url} target="_blank" rel="noreferrer" className={`${ghostBtn} mt-2`}>
     {label} ↗
@@ -369,8 +369,8 @@ function OutcomeView({ out, d, orgId }: { out: Outcome; d: InvoiceDetail; orgId:
             <Badge tone="red">Rejected by Tempo</Badge>
           </div>
           <p className={headline}>Our software was off. Tempo still said no.</p>
-          <p className="text-sm leading-relaxed text-graphite">
-            The agent sent {amount ?? 'the payment'} to <span className="font-mono text-xs text-ink [overflow-wrap:anywhere]">{d.payment?.toAddress ?? d.address}</span>. The agent
+          <p className="text-sm leading-relaxed text-fg3">
+            The agent sent {amount ?? 'the payment'} to <span className="font-mono text-xs text-fg [overflow-wrap:anywhere]">{d.payment?.toAddress ?? d.address}</span>. The agent
             key isn&apos;t allowed to pay that wallet, so the transaction reverted onchain{out.code ? ` (${out.code})` : ''}. No money moved.
           </p>
           {out.url && explorerLink(out.url, 'View the reverted transaction')}
@@ -383,7 +383,7 @@ function OutcomeView({ out, d, orgId }: { out: Outcome; d: InvoiceDetail; orgId:
             <Badge tone="red">Refused by Tempo</Badge>
           </div>
           <p className={headline}>Our software was off. Tempo still said no.</p>
-          <p className="text-sm leading-relaxed text-graphite">Tempo refused the transfer before it was broadcast{out.code ? ` (${out.code})` : ''}. No money moved.</p>
+          <p className="text-sm leading-relaxed text-fg3">Tempo refused the transfer before it was broadcast{out.code ? ` (${out.code})` : ''}. No money moved.</p>
         </div>
       )
     case 'not_sent':
@@ -393,7 +393,7 @@ function OutcomeView({ out, d, orgId }: { out: Outcome; d: InvoiceDetail; orgId:
             <Badge tone="grey">Not sent</Badge>
           </div>
           <p className={headline}>Not sent — the lab only fires payments Tempo will refuse.</p>
-          <p className="text-sm leading-relaxed text-graphite">Tempo would or might have accepted this payment, so the lab didn&apos;t send it. No money moved.</p>
+          <p className="text-sm leading-relaxed text-fg3">Tempo would or might have accepted this payment, so the lab didn&apos;t send it. No money moved.</p>
         </div>
       )
     case 'unconfirmed':
@@ -403,7 +403,7 @@ function OutcomeView({ out, d, orgId }: { out: Outcome; d: InvoiceDetail; orgId:
             <Badge tone="amber">Awaiting confirmation</Badge>
           </div>
           <p className={headline}>Sent, awaiting confirmation.</p>
-          <p className="text-sm leading-relaxed text-graphite">Tempo hasn&apos;t confirmed the transaction yet. Check it on the explorer.</p>
+          <p className="text-sm leading-relaxed text-fg3">Tempo hasn&apos;t confirmed the transaction yet. Check it on the explorer.</p>
           {out.url && explorerLink(out.url, 'View the transaction')}
         </div>
       )
@@ -416,7 +416,7 @@ function OutcomeView({ out, d, orgId }: { out: Outcome; d: InvoiceDetail; orgId:
           <p className={headline}>
             Paid {amount ? `${amount} ` : ''}to {to}.
           </p>
-          <p className="text-sm leading-relaxed text-graphite">The payee is verified and approved, so the agent paid it.</p>
+          <p className="text-sm leading-relaxed text-fg3">The payee is verified and approved, so the agent paid it.</p>
           {out.url && explorerLink(out.url, 'View the payment')}
         </div>
       )
@@ -438,7 +438,7 @@ function OutcomeView({ out, d, orgId }: { out: Outcome; d: InvoiceDetail; orgId:
             <Badge tone="amber">Needs approval</Badge>
           </div>
           <p className={headline}>{to} checks out, but you haven&apos;t approved it yet.</p>
-          <p className="text-sm leading-relaxed text-graphite">Approve it on the dashboard with your root wallet, and the agent pays.</p>
+          <p className="text-sm leading-relaxed text-fg3">Approve it on the dashboard with your root wallet, and the agent pays.</p>
           <Link href={`/app/${orgId}`} className={`${ghostBtn} mt-2`}>
             Review the approval →
           </Link>
@@ -460,7 +460,7 @@ function OutcomeView({ out, d, orgId }: { out: Outcome; d: InvoiceDetail; orgId:
             <Badge tone="grey">Failed</Badge>
           </div>
           <p className={headline}>The agent stopped without a decision.</p>
-          {out.note && <p className="text-sm leading-relaxed text-graphite [overflow-wrap:anywhere]">{out.note}</p>}
+          {out.note && <p className="text-sm leading-relaxed text-fg3 [overflow-wrap:anywhere]">{out.note}</p>}
         </div>
       )
   }
