@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { API_URL, type Payee } from '@/lib/api'
 import { addressUrl } from '@/lib/chain'
-import { Avatar, CardFoot, Pill, ShieldIcon } from '@/components/atoms'
+import { Addr, Avatar, CardFoot, Pill, ShieldIcon } from '@/components/atoms'
 import { PageHead } from '@/components/PageHead'
 import { Row, levelLabel } from '@/components/Row'
 import { Badge } from '@/components/VerdictCard'
@@ -123,7 +123,9 @@ export default async function PayeeProfilePage({ params }: Props) {
 
         <div className={`${card} flex min-w-0 flex-col`}>
           <h2 className={cardTitle}>Wallet</h2>
-          <p className="mt-3 font-mono text-[13px] leading-relaxed text-fg [overflow-wrap:anywhere] sm:text-sm">{p.wallet}</p>
+          <p className="mt-3 font-mono text-[13px] leading-relaxed text-fg sm:text-sm">
+            <Addr value={p.wallet} />
+          </p>
           <CardFoot className="mt-6" avatar={<Avatar name={p.legalName} flagged={flagged} />} m1={`${p.legalName} · ${p.domain}`} m2={levelLabel(p.level)} />
           <div className="mt-auto flex flex-col gap-2 pt-8">
             <Link href={`/verify?address=${encodeURIComponent(p.wallet)}&name=${encodeURIComponent(p.legalName)}`} className={primaryBtn}>

@@ -128,3 +128,15 @@ export function CardFoot({ avatar, m1, m2, action, className = '' }: { avatar?: 
     </div>
   )
 }
+
+/** A full address that wraps once, in the middle, never mid-half and never leaving a 3-character orphan. */
+export function Addr({ value }: { value: string }) {
+  const mid = Math.ceil(value.length / 2)
+  return (
+    <>
+      <span className="whitespace-nowrap">{value.slice(0, mid)}</span>
+      <wbr />
+      <span className="whitespace-nowrap">{value.slice(mid)}</span>
+    </>
+  )
+}

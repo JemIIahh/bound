@@ -5,7 +5,7 @@ import { api, errorMessage, type Approval, type Hex, type OrgInvoice, type PayRe
 import { txUrl } from '@/lib/chain'
 import { ago, usd } from '@/lib/format'
 import { useIsRoot, useRootCall } from '@/lib/hooks'
-import { Amount, ArrowIcon, Avatar, CardFoot, Pill } from './atoms'
+import { Addr, Amount, ArrowIcon, Avatar, CardFoot, Pill } from './atoms'
 import { InvoiceLog } from './InvoiceInbox'
 import { VERDICTS, VerdictCard, VerdictLine } from './VerdictCard'
 import { card, errorText, ghostBtn, hint, invCard, isTxHash, link, primaryBtn, roundBtn, short, smallBtn } from './ui'
@@ -188,7 +188,7 @@ export function ApprovalCard({
           className={`${expanded ? '' : 'mt-auto'} pt-8`}
           avatar={<Avatar name={approval.label} flagged={flagged} />}
           m1={m1}
-          m2={approval.wallet}
+          m2={<Addr value={approval.wallet} />}
           action={
             !reviewing && (
               <button
@@ -255,7 +255,9 @@ export function ApprovalCard({
                       <span className="text-[15px] font-semibold">{label ?? 'Allowlisted wallet'}</span>
                       {isNew && <Pill tone="green">Adding</Pill>}
                     </div>
-                    <span className="font-mono text-[12.5px] text-fg3 [overflow-wrap:anywhere]">{r}</span>
+                    <span className="font-mono text-[12.5px] text-fg3">
+                      <Addr value={r} />
+                    </span>
                     {carried && (
                       <span className="mt-1 flex items-center gap-2 text-[13px] font-medium text-amber">
                         <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber" />

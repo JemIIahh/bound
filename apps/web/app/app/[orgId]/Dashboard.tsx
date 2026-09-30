@@ -5,7 +5,7 @@ import { useCallback, useState } from 'react'
 import type { Overview } from '@/lib/api'
 import { useOverview } from '@/lib/hooks'
 import { ApprovalCard } from '@/components/ApprovalCard'
-import { Avatar, LockIcon, Pill } from '@/components/atoms'
+import { Addr, Avatar, LockIcon, Pill } from '@/components/atoms'
 import { Counters } from '@/components/Counters'
 import { EventFeed } from '@/components/EventFeed'
 import { InvoiceCard, InvoiceComposer, invoiceGroup } from '@/components/InvoiceInbox'
@@ -234,7 +234,9 @@ function Payees({ o }: { o: Overview }) {
                   <span className="text-[15px] font-semibold text-fg">{r.label}</span>
                   <span className="text-[13px] text-fg3">{r.note}</span>
                 </div>
-                <p className="mt-0.5 font-mono text-[12px] text-fg3 [overflow-wrap:anywhere]">{r.wallet}</p>
+                <p className="mt-0.5 font-mono text-[12px] text-fg3">
+                  <Addr value={r.wallet} />
+                </p>
               </div>
             </li>
           ))}

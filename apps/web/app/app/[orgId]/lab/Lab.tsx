@@ -7,7 +7,7 @@ import { txUrl } from '@/lib/chain'
 import { ago, usd } from '@/lib/format'
 import { useOverview } from '@/lib/hooks'
 import { AgentLog } from '@/components/AgentLog'
-import { Pill } from '@/components/atoms'
+import { Addr, Pill } from '@/components/atoms'
 import { BlockedStamp } from '@/components/BlockedStamp'
 import { NetworkNotice } from '@/components/NetworkNotice'
 import { PageHead } from '@/components/PageHead'
@@ -435,7 +435,7 @@ function OutcomeView({ out, d, orgId }: { out: Outcome; d: InvoiceDetail; orgId:
         <div className="flex flex-col gap-4">
           <BlockedStamp className="my-4 self-center" />
           <p className={body}>
-            The agent sent {amount ?? 'the payment'} to <span className="font-mono text-[13px] text-fg [overflow-wrap:anywhere]">{d.payment?.toAddress ?? d.address}</span>. The agent
+            The agent sent {amount ?? 'the payment'} to <span className="font-mono text-[13px] text-fg">{(d.payment?.toAddress ?? d.address) && <Addr value={(d.payment?.toAddress ?? d.address)!} />}</span>. The agent
             key isn&apos;t allowed to pay that wallet, so the transaction reverted onchain{out.code ? ` (${out.code})` : ''}. No money moved.
           </p>
           {explorerLink(out.url, 'View the reverted transaction')}

@@ -5,7 +5,7 @@ import { api, errorMessage, type InvoiceDetail, type OrgEvent, type OrgInvoice, 
 import { txUrl } from '@/lib/chain'
 import { ago, usd } from '@/lib/format'
 import { AgentLog } from './AgentLog'
-import { Amount, ArrowIcon, Avatar, CardFoot, Pill } from './atoms'
+import { Addr, Amount, ArrowIcon, Avatar, CardFoot, Pill } from './atoms'
 import { BLOCK_REASONS, FAIL_REASONS, StatusBadge, invoiceStatus, isOpenStatus } from './InvoiceStatus'
 import { Row } from './Row'
 import { VERDICTS, VerdictBadge } from './VerdictCard'
@@ -216,7 +216,9 @@ export function InvoiceCard({
         <div className="min-w-0 border-t border-line2 pt-8 lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0">
           {inv.address && (
             <div className="mb-6">
-              <Row label="Pays to">{inv.address}</Row>
+              <Row label="Pays to">
+                <Addr value={inv.address} />
+              </Row>
               {inv.senderDomain && <Row label="Sent from">{inv.senderDomain}</Row>}
             </div>
           )}
