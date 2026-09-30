@@ -3,6 +3,8 @@ import Link from 'next/link'
 import { IBM_Plex_Mono, Outfit, Poppins } from 'next/font/google'
 import { Providers } from './providers'
 import { Nav } from '@/components/Nav'
+import { TourLink } from '@/components/TourLink'
+import { WelcomeTour } from '@/components/WelcomeTour'
 import { Logo } from '@/components/atoms'
 import { wrap } from '@/components/ui'
 import './globals.css'
@@ -42,11 +44,13 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                       {l.label}
                     </Link>
                   ))}
+                  <TourLink />
                 </nav>
                 <small className="text-sm text-fg3">© 2026 Bound. Built on Tempo.</small>
               </div>
             </footer>
           </div>
+          <WelcomeTour />
         </Providers>
       </body>
     </html>

@@ -100,3 +100,91 @@ body {
   outline: 2px solid var(--color-acc);
   outline-offset: 2px;
 }
+
+/* Welcome tour: short entrance animations, restarted per step (the scene is keyed by step). */
+@keyframes tour-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes tour-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.97);
+  }
+}
+@keyframes tour-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@keyframes tour-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  70% {
+    transform: scale(1.08);
+  }
+}
+@keyframes tour-stamp {
+  0% {
+    opacity: 0;
+    transform: rotate(-14deg) scale(1.9);
+  }
+  60% {
+    opacity: 1;
+    transform: rotate(-5deg) scale(0.94);
+  }
+  100% {
+    transform: rotate(-6deg) scale(1);
+  }
+}
+@keyframes tour-mark {
+  0%,
+  100% {
+    background-color: rgba(255, 90, 60, 0);
+  }
+  50% {
+    background-color: rgba(255, 90, 60, 0.22);
+  }
+}
+.tour-fade {
+  animation: tour-fade 0.25s ease-out;
+}
+.tour-rise {
+  animation: tour-rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.tour-in {
+  animation: tour-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.tour-late {
+  animation: tour-in 0.5s 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.tour-pop {
+  animation: tour-pop 0.5s 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.tour-stamp {
+  animation: tour-stamp 0.55s 0.2s cubic-bezier(0.3, 1.4, 0.5, 1) both;
+}
+.tour-mark {
+  animation: tour-mark 1.6s 0.9s ease-in-out infinite;
+}
+.tour-d1 {
+  animation-delay: 0.45s;
+}
+.tour-d2 {
+  animation-delay: 1s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tour-fade,
+  .tour-rise,
+  .tour-in,
+  .tour-late,
+  .tour-pop,
+  .tour-stamp,
+  .tour-mark {
+    animation: none;
+  }
+}

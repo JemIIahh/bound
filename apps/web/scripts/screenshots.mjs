@@ -303,6 +303,8 @@ const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers
 async function open(width, { payee, payer, orgToken, liveWallet = false, serverNetwork = 'testnet' } = {}) {
   const browser = await chromium.launch()
   const context = await browser.newContext({ viewport: { width, height: width < 600 ? 844 : 900 } })
+  // the first-visit welcome tour would cover every page; it has its own shots
+  await context.addInitScript(() => { try { localStorage.setItem('bound.tour.v1', '1') } catch {} })
   await context.exposeFunction('__wallet', walletHandler(liveWallet))
   await context.addInitScript(walletInit)
   const state = { row: payee ? fixtureRow(payee.row) : null, minePosts: 0, scenario: payee?.scenario ?? {} }
