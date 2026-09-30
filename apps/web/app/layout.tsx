@@ -23,8 +23,9 @@ const FOOT_LINKS = [
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
-      <body className={`${sans.variable} ${mono.variable} antialiased`}>
+    // font variables on <html>: the theme's --font-sans/--font-mono are declared on :root and must resolve there
+    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
+      <body className="antialiased">
         <Providers>
           <div className="flex min-h-screen flex-col">
             <Nav />
