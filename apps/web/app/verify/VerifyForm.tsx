@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { ApiError, api, errorMessage, type VerifyResult } from '@/lib/api'
+import { Pill } from '@/components/atoms'
 import { VerdictCard } from '@/components/VerdictCard'
-import { card, errorText, fieldClass, fieldLabel, hint, primaryBtn } from '@/components/ui'
+import { card, cardTitle, errorText, fieldClass, fieldLabel, hint, primaryBtn } from '@/components/ui'
 
 export function VerifyForm() {
   const params = useSearchParams()
@@ -39,8 +40,13 @@ export function VerifyForm() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <form onSubmit={submit} className={`${card} flex flex-col gap-5`} noValidate>
+    <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-2 lg:gap-6">
+      <form onSubmit={submit} className={`${card} flex min-w-0 flex-col gap-6`} noValidate>
+        <div className="flex items-center justify-between gap-4">
+          <Pill>Payee check</Pill>
+          <span className="text-[15px] text-fg3">No wallet needed</span>
+        </div>
+        <h2 className={cardTitle}>Paste the invoice details</h2>
         <div>
           <label htmlFor="address" className={fieldLabel}>
             Wallet address
@@ -76,7 +82,7 @@ export function VerifyForm() {
         </div>
         <div>
           <label htmlFor="senderDomain" className={fieldLabel}>
-            Sender domain <span className="text-graphite">(optional)</span>
+            Sender domain <span className="font-normal text-fg3">(optional)</span>
           </label>
           <input
             id="senderDomain"
@@ -94,7 +100,7 @@ export function VerifyForm() {
             <p className={`mt-1.5 ${hint}`}>The domain the invoice email came from.</p>
           )}
         </div>
-        <div className="flex flex-col gap-2">
+        <div className="mt-auto flex flex-col gap-2 pt-2">
           <button type="submit" disabled={busy || !address.trim() || !payeeName.trim()} className={primaryBtn}>
             {busy ? 'Checking…' : 'Check payee'}
           </button>
@@ -102,11 +108,37 @@ export function VerifyForm() {
         </div>
       </form>
 
-      {result && (
-        <div ref={resultRef} className="scroll-mt-6">
+      <div ref={resultRef} className="flex min-w-0 scroll-mt-6 flex-col">
+        {result ? (
           <VerdictCard result={result} />
-        </div>
-      )}
+        ) : (
+          <div className={`${card} flex flex-1 flex-col`} aria-live="polite">
+            <div className="flex items-center justify-between gap-4">
+              <Pill>Result</Pill>
+              <span className="text-[15px] text-fg3">{busy ? 'Checking…' : 'Waiting for a check'}</span>
+            </div>
+            <p className={`mt-6 ${cardTitle} !text-fg3`}>The verdict shows here.</p>
+            <ul className="mt-6 flex flex-col gap-3 text-[15px] text-fg2">
+              <li className="flex items-center gap-3">
+                <span className="h-2 w-2 shrink-0 rounded-full bg-ok" />
+                Match — the wallet belongs to the company on the invoice
+              </li>
+              <li className="flex items-center gap-3">
+                <span className="h-2 w-2 shrink-0 rounded-full bg-amber" />
+                Close match — check the details before paying
+              </li>
+              <li className="flex items-center gap-3">
+                <span className="h-2 w-2 shrink-0 rounded-full bg-fg3" />
+                No match — nobody has proven they own it
+              </li>
+              <li className="flex items-center gap-3">
+                <span className="h-2 w-2 shrink-0 rounded-full bg-acc" />
+                Lookalike, changed or revoked — don&apos;t pay it
+              </li>
+            </ul>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

@@ -1,4 +1,5 @@
 import type { InvoiceStatus } from '@/lib/api'
+import { Pill } from './atoms'
 import { Badge, type Tone } from './VerdictCard'
 
 /** How each invoice status reads. The status itself always comes from the API. */
@@ -10,7 +11,7 @@ export const INVOICE_STATUS: Record<InvoiceStatus, { label: string; tone: Tone; 
   paid: { label: 'Paid', tone: 'green' },
   blocked: { label: 'Blocked', tone: 'red' },
   failed: { label: 'Failed', tone: 'grey', note: 'Not paid. Open the log for details.' },
-  unconfirmed: { label: 'Awaiting confirmation', tone: 'amber', note: 'Sent, awaiting confirmation on Tempo.' },
+  unconfirmed: { label: 'Unconfirmed', tone: 'amber', note: 'Sent, awaiting confirmation on Tempo.' },
 }
 
 export const invoiceStatus = (s: string) => INVOICE_STATUS[s as InvoiceStatus] ?? { label: s, tone: 'grey' as Tone }
@@ -20,6 +21,7 @@ export const isOpenStatus = (s: string) => s === 'new' || s === 'processing' || 
 
 export function StatusBadge({ status }: { status: string }) {
   const s = invoiceStatus(status)
+  if (status === 'new' || status === 'processing') return <Pill dot="bg-current live-dot">{s.label}</Pill>
   return <Badge tone={s.tone}>{s.label}</Badge>
 }
 

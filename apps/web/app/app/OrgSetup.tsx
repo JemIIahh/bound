@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { useConnection } from 'wagmi'
 import { ApiError, api, errorMessage, saveOrgToken, savedOrgIds, type CreatedOrg, type Hex, type Overview, type RootCall } from '@/lib/api'
 import { txUrl } from '@/lib/chain'
@@ -12,7 +12,8 @@ import { ConnectPanel } from '@/components/ConnectButton'
 import { NetworkNotice } from '@/components/NetworkNotice'
 import { Row } from '@/components/Row'
 import { Stepper, type Step, type StepState } from '@/components/Stepper'
-import { card, errorText, fieldClass, fieldLabel, ghostBtn, hint, primaryBtn, sectionLabel, short } from '@/components/ui'
+import { ArrowIcon, Pill } from '@/components/atoms'
+import { card, cardTitle, errorText, fieldClass, fieldLabel, ghostBtn, hint, isTxHash, link, primaryBtn, roundBtn, short } from '@/components/ui'
 
 const WEEK = 7 * 86400
 
@@ -36,7 +37,7 @@ function writeSetup(wallet: string, s: Setup | null) {
   }
 }
 
-export function OrgSetup() {
+export function OrgSetup({ aside }: { aside?: ReactNode }) {
   const router = useRouter()
   const { address, isConnected } = useConnection()
   const wallet = isConnected ? address : undefined
@@ -68,7 +69,7 @@ export function OrgSetup() {
       summary: wallet ? short(wallet) : undefined,
       children: (
         <div className="flex flex-col gap-4">
-          <p className="text-sm leading-relaxed text-ink">
+          <p className="text-[15px] leading-relaxed text-fg2">
             This wallet becomes your organization&apos;s root account. You&apos;ll sign the agent&apos;s key and every payee approval with it.
           </p>
           <ConnectPanel />
@@ -102,25 +103,28 @@ export function OrgSetup() {
   ]
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-w-0 flex-col gap-4 lg:gap-6">
       <NetworkNotice check={net} />
       <SavedOrgs />
-      <div className={card}>
-        <div className="mb-6 flex items-center justify-between gap-3">
-          <span className={sectionLabel}>New organization</span>
-          <span className="font-mono text-[11px] text-graphite">
-            Step {active + 1} of {steps.length}
-          </span>
-        </div>
-        <Stepper steps={steps} />
-        {setup && (
-          <div className="mt-6 flex items-center justify-between gap-3 border-t border-black/10 pt-4 font-mono text-[11px] text-graphite">
-            <span className="truncate">{setup.orgId}</span>
-            <button onClick={() => save(null)} className="shrink-0 underline decoration-black/30 underline-offset-4 transition hover:text-ink">
-              Start over
-            </button>
+      <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] lg:gap-6">
+        <div className={`${card} min-w-0`}>
+          <div className="mb-8 flex items-center justify-between gap-4">
+            <Pill>New organization</Pill>
+            <span className="text-[15px] text-fg3">
+              Step {active + 1} of {steps.length}
+            </span>
           </div>
-        )}
+          <Stepper steps={steps} />
+          {setup && (
+            <div className="mt-8 flex items-center justify-between gap-3 border-t border-line2 pt-5 font-mono text-[12.5px] text-fg3">
+              <span className="min-w-0 [overflow-wrap:anywhere]">{setup.orgId}</span>
+              <button onClick={() => save(null)} className={`shrink-0 font-sans text-sm ${link}`}>
+                Start over
+              </button>
+            </div>
+          )}
+        </div>
+        {aside}
       </div>
     </div>
   )
@@ -226,7 +230,7 @@ function AuthorizeStep({ setup, blocked, onSent, onAuthorized }: { setup: Setup;
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm leading-relaxed text-ink">
+      <p className="text-[15px] leading-relaxed text-fg2">
         One transaction from your wallet gives the agent its own key. Until you approve a payee, the key can only send money back to your own account.
       </p>
       <div>
@@ -243,8 +247,8 @@ function AuthorizeStep({ setup, blocked, onSent, onAuthorized }: { setup: Setup;
             Check the sent transaction again
           </button>
         )}
-        {setup.txHash && (
-          <a href={txUrl(setup.txHash)} target="_blank" rel="noreferrer" className="self-start font-mono text-[11px] text-graphite underline decoration-black/30 underline-offset-4 hover:text-ink">
+        {isTxHash(setup.txHash) && (
+          <a href={txUrl(setup.txHash)} target="_blank" rel="noreferrer" className="self-start font-mono text-[12.5px] text-fg3 underline decoration-fg3/50 underline-offset-4 hover:text-fg">
             Authorization {short(setup.txHash)} ↗
           </a>
         )}
@@ -285,28 +289,36 @@ function SavedOrgs() {
 
   if (!orgs.length) return null
   return (
-    <div className={card}>
-      <span className={sectionLabel}>Your organizations</span>
-      <ul className="mt-3 flex flex-col">
-        {orgs.map((o, i) => (
-          <li key={o.id} className={i ? 'border-t border-black/10' : ''}>
-            <Link href={`/app/${o.id}`} className="group flex items-center justify-between gap-4 py-3">
-              <div className="min-w-0">
-                <p className="truncate text-sm text-ink group-hover:underline group-hover:decoration-black/30 group-hover:underline-offset-4">
-                  {o.name ?? (o.failed ? 'Unavailable' : 'Loading…')}
-                </p>
-                <p className="truncate font-mono text-[11px] text-graphite">{o.id}</p>
+    <section aria-labelledby="orgs-label" className="flex flex-col gap-4">
+      <h2 id="orgs-label" className={cardTitle}>
+        Your organizations
+      </h2>
+      <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:gap-6">
+        {orgs.map((o) => (
+          <li key={o.id} className="min-w-0">
+            <Link href={`/app/${o.id}`} className={`${card} group flex h-full flex-col !p-6 transition hover:border-edge sm:!p-8`}>
+              <div className="flex items-center justify-between gap-3">
+                {o.name ? (
+                  o.authorized ? (
+                    <Pill tone="green">Key authorized</Pill>
+                  ) : (
+                    <Pill tone="amber">Setup unfinished</Pill>
+                  )
+                ) : (
+                  <Pill>{o.failed ? 'Unavailable' : 'Loading'}</Pill>
+                )}
               </div>
-              <span className="flex shrink-0 items-center gap-3 font-mono text-[11px] text-graphite">
-                {o.name && (o.authorized ? 'Key authorized' : 'Setup unfinished')}
-                <span aria-hidden="true" className="text-ink">
-                  →
+              <p className="mt-6 text-xl font-semibold tracking-[-0.02em] text-fg [overflow-wrap:anywhere]">{o.name ?? (o.failed ? 'Unavailable' : 'Loading…')}</p>
+              <div className="mt-auto flex items-center gap-4 pt-6">
+                <p className="min-w-0 flex-1 font-mono text-[12.5px] text-fg3 [overflow-wrap:anywhere]">{o.id}</p>
+                <span aria-hidden="true" className={`${roundBtn} group-hover:scale-105`}>
+                  <ArrowIcon />
                 </span>
-              </span>
+              </div>
             </Link>
           </li>
         ))}
       </ul>
-    </div>
+    </section>
   )
 }

@@ -1,9 +1,8 @@
 import type { ReactNode } from 'react'
 import type { AgentLogEntry } from '@/lib/api'
 import { txUrl } from '@/lib/chain'
-import { short } from './ui'
+import { isTxHash, link, short } from './ui'
 
-const isTxHash = (v: unknown): v is string => typeof v === 'string' && /^0x[0-9a-fA-F]{64}$/.test(v)
 const isReasonList = (v: unknown): v is { code: string; detail: string }[] =>
   Array.isArray(v) && v.length > 0 && v.every((r) => r && typeof r === 'object' && 'detail' in r && 'code' in r)
 
@@ -12,10 +11,10 @@ function clip(s: string, n = 280) {
 }
 
 function Value({ v }: { v: unknown }): ReactNode {
-  if (v === null || v === undefined) return <span className="text-graphite">—</span>
+  if (v === null || v === undefined) return <span className="text-fg3">—</span>
   if (isTxHash(v))
     return (
-      <a href={txUrl(v)} target="_blank" rel="noreferrer" className="underline decoration-black/30 underline-offset-4 hover:decoration-ink">
+      <a href={txUrl(v)} target="_blank" rel="noreferrer" className={link}>
         {short(v)} ↗
       </a>
     )
@@ -26,7 +25,7 @@ function Value({ v }: { v: unknown }): ReactNode {
       <span className="flex flex-col gap-1">
         {v.map((r, i) => (
           <span key={`${r.code}-${i}`}>
-            {r.detail} <span className="text-graphite">({r.code})</span>
+            {r.detail} <span className="text-fg3">({r.code})</span>
           </span>
         ))}
       </span>
@@ -38,19 +37,19 @@ function Value({ v }: { v: unknown }): ReactNode {
 function Fields({ data }: { data: unknown }) {
   if (data === null || typeof data !== 'object' || Array.isArray(data)) {
     return (
-      <p className="font-mono text-[11px] leading-relaxed text-ink [overflow-wrap:anywhere]">
+      <p className="leading-relaxed text-[#D9D6CE] [overflow-wrap:anywhere]">
         <Value v={data} />
       </p>
     )
   }
   const entries = Object.entries(data as Record<string, unknown>).filter(([k]) => k !== 'payee' && k !== 'checkId')
-  if (!entries.length) return <p className="font-mono text-[11px] text-graphite">no arguments</p>
+  if (!entries.length) return <p className="text-fg3">no arguments</p>
   return (
-    <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 font-mono text-[11px] leading-relaxed">
+    <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 leading-relaxed">
       {entries.map(([k, v]) => (
         <div key={k} className="contents">
-          <dt className="text-graphite">{k}</dt>
-          <dd className="text-ink [overflow-wrap:anywhere]">
+          <dt className="text-fg3">{k}</dt>
+          <dd className="text-[#D9D6CE] [overflow-wrap:anywhere]">
             <Value v={v} />
           </dd>
         </div>
@@ -61,28 +60,45 @@ function Fields({ data }: { data: unknown }) {
 
 const KIND: Record<AgentLogEntry['kind'], string> = { tool_call: 'Call', tool_result: 'Result', text: 'Agent' }
 
+/** A tool result that stopped a payment (blocked verdict, refusal, chain rejection) gets the orange rule. */
+function refused(e: AgentLogEntry): boolean {
+  if (e.kind !== 'tool_result' || !e.data || typeof e.data !== 'object') return false
+  const d = e.data as Record<string, unknown>
+  return d.action === 'BLOCK' || d.chain === 'rejected' || d.status === 'blocked'
+}
+
 /** The agent's run in order: each tool call, its result, and what the agent wrote. */
-export function AgentLog({ entries, live = false }: { entries: AgentLogEntry[]; live?: boolean }) {
+export function AgentLog({ entries, live = false, bleed = false }: { entries: AgentLogEntry[]; live?: boolean; /** rows run to the card's edges (log sits directly in a card) */ bleed?: boolean }) {
+  const pad = bleed ? 'px-6 sm:px-10' : 'px-3 rounded-lg'
   return (
-    <ol className="flex flex-col gap-4">
-      {entries.map((e, i) => (
-        <li key={`${e.at}-${i}`} className="flex gap-4">
-          <span className="w-5 shrink-0 pt-[2px] font-mono text-[11px] text-graphite">{String(i + 1).padStart(2, '0')}</span>
-          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-            <p className="flex flex-wrap items-baseline gap-x-2 font-mono text-[11px]">
-              <span className="uppercase tracking-[0.14em] text-graphite">{KIND[e.kind] ?? e.kind}</span>
-              {e.name && <span className="text-ink">{e.name}</span>}
-            </p>
-            {e.kind === 'text' ? <p className="text-sm leading-relaxed text-ink [overflow-wrap:anywhere]">{String(e.data)}</p> : <Fields data={e.data} />}
-          </div>
-        </li>
-      ))}
+    <ol className={`flex flex-col font-mono text-[12.5px] sm:text-[13px] ${bleed ? '-mx-6 sm:-mx-10' : '-mx-3'}`}>
+      {entries.map((e, i) => {
+        const no = refused(e)
+        return (
+          <li
+            key={`${e.at}-${i}`}
+            className={`grid grid-cols-[28px_minmax(0,1fr)] gap-x-3 py-2 sm:grid-cols-[36px_minmax(0,1fr)] sm:gap-x-4 ${pad} ${
+              no ? 'my-1 bg-acc/12 py-3 shadow-[inset_3px_0_0_var(--color-acc)]' : ''
+            }`}
+          >
+            <span className="text-fg3">{String(i + 1).padStart(2, '0')}</span>
+            <div className="flex min-w-0 flex-col gap-1">
+              <p className="flex flex-wrap items-baseline gap-x-2">
+                <span className={no ? 'text-acc2' : 'text-fg2'}>{KIND[e.kind] ?? e.kind}</span>
+                {e.name && <span className={no ? 'font-medium text-acc2' : 'text-fg'}>{e.name}</span>}
+              </p>
+              {e.kind === 'text' ? <p className="font-sans text-[15px] leading-relaxed text-fg [overflow-wrap:anywhere]">{String(e.data)}</p> : <Fields data={e.data} />}
+            </div>
+          </li>
+        )
+      })}
       {live && (
-        <li className="flex gap-4">
-          <span className="w-5 shrink-0" />
-          <p className="flex items-center gap-3 text-sm text-graphite">
-            <span className="live-dot inline-block h-1.5 w-1.5 rounded-full bg-ink" />
+        <li className={`grid grid-cols-[28px_minmax(0,1fr)] gap-x-3 py-2 sm:grid-cols-[36px_minmax(0,1fr)] sm:gap-x-4 ${pad}`}>
+          <span />
+          <p className="flex items-center gap-3 font-sans text-[15px] text-fg2">
+            <span className="live-dot inline-block h-2 w-2 rounded-full bg-acc" />
             {entries.length ? 'Agent working…' : 'Starting the agent…'}
+            <span className="live-dot inline-block h-[15px] w-2 bg-fg2" />
           </p>
         </li>
       )}

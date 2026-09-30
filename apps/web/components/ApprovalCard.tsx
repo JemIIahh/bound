@@ -3,10 +3,12 @@
 import { useState } from 'react'
 import { api, errorMessage, type Approval, type Hex, type OrgInvoice, type PayResult, type PreparedApproval, type Verdict } from '@/lib/api'
 import { txUrl } from '@/lib/chain'
-import { usd } from '@/lib/format'
+import { ago, usd } from '@/lib/format'
 import { useIsRoot, useRootCall } from '@/lib/hooks'
-import { VERDICTS, VerdictCard } from './VerdictCard'
-import { card, errorText, ghostBtn, hint, primaryBtn, sectionLabel, short, smallBtn } from './ui'
+import { Addr, Amount, ArrowIcon, Avatar, CardFoot, Pill } from './atoms'
+import { InvoiceLog } from './InvoiceInbox'
+import { VERDICTS, VerdictCard, VerdictLine } from './VerdictCard'
+import { card, errorText, ghostBtn, hint, invCard, isTxHash, link, primaryBtn, roundBtn, short, smallBtn } from './ui'
 
 /** Verdicts that are never approvable (the server refuses them too); no Approve button is rendered. */
 const NEVER_APPROVE: ReadonlySet<Verdict> = new Set<Verdict>(['LOOKALIKE', 'CHANGED', 'REVOKED'])
@@ -36,6 +38,8 @@ export function ApprovalCard({
   signBlocked = false,
   onChange,
   onDismiss,
+  highlight = false,
+  hidden = false,
 }: {
   orgId: string
   approval: Approval
@@ -47,6 +51,10 @@ export function ApprovalCard({
   signBlocked?: boolean
   onChange: () => void
   onDismiss: () => void
+  /** The one light card: the approval that needs action first. */
+  highlight?: boolean
+  /** Filtered out of the grid (kept mounted so an approval in progress keeps its state). */
+  hidden?: boolean
 }) {
   const { isRoot, isConnected } = useIsRoot(rootAddress)
   const send = useRootCall()
@@ -56,6 +64,7 @@ export function ApprovalCard({
   const [error, setError] = useState<string | null>(null)
   const [txHash, setTxHash] = useState<Hex | null>(null)
   const [result, setResult] = useState<{ kind: 'approved'; payment: PayResult } | { kind: 'rejected' } | null>(null)
+  const [details, setDetails] = useState(false)
 
   const base = `/v1/orgs/${encodeURIComponent(orgId)}/approvals/${encodeURIComponent(approval.id)}`
   const verdict = approval.verdict?.verdict
@@ -132,57 +141,136 @@ export function ApprovalCard({
     confirming: 'Confirming on Tempo…',
   }[phase as string] ?? 'Sign allowlist update'
 
-  const rootMessage = !isConnected
-    ? `Connect this organization's root wallet (${short(rootAddress)}) to approve.`
-    : !isRoot
-      ? `The connected wallet isn't this organization's root account. Switch to ${short(rootAddress)} to approve.`
-      : null
+  const root = <span className="whitespace-nowrap font-mono text-[12px]">{short(rootAddress)}</span>
+  const rootMessage = !isConnected ? (
+    <>Connect this organization&apos;s root wallet ({root}) to approve.</>
+  ) : !isRoot ? (
+    <>The connected wallet isn&apos;t this organization&apos;s root account. Switch to {root} to approve.</>
+  ) : null
+
+  const reviewing = !result && !!prepared && (phase === 'review' || busy) && phase !== 'rejecting'
+  const expanded = reviewing || details
+  const tag = result?.kind === 'approved' ? 'Approved' : result?.kind === 'rejected' ? 'Rejected' : 'Needs approval'
+  const payee = approval.verdict?.payee
+  const flagged = !!verdict && NEVER_APPROVE.has(verdict)
+  const m1 = [ago(approval.createdAt), payee ? `verified ${payee.domain}` : null].filter(Boolean).join(' · ')
 
   return (
-    <article className={card} aria-label={`Approval for ${approval.label}`}>
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <span className={sectionLabel}>{result?.kind === 'approved' ? 'Approved' : result?.kind === 'rejected' ? 'Rejected' : 'Approval needed'}</span>
-        <span className="font-mono text-[11px] text-graphite">{[invoice?.invoiceNo, amount].filter(Boolean).join(' · ')}</span>
-      </div>
-      <p className="mt-2 font-display text-2xl tracking-[-0.01em] text-ink [overflow-wrap:anywhere]">{approval.label}</p>
-      <p className="mt-1 font-mono text-[11px] text-graphite [overflow-wrap:anywhere]">{approval.wallet}</p>
+    <article
+      className={`${highlight ? invCard : card} flex min-w-0 flex-col gap-8 ${expanded ? 'col-span-full lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] lg:gap-12' : ''} ${hidden ? '!hidden' : ''}`}
+      aria-label={`Approval for ${approval.label}`}
+    >
+      <div className={`flex min-w-0 flex-1 flex-col ${expanded ? 'lg:self-start' : ''}`}>
+        <div className="flex items-center justify-between gap-4">
+          <Pill tone={result?.kind === 'approved' ? 'green' : 'grey'} dot={result ? undefined : 'bg-[#C98A12]'}>
+            {tag}
+          </Pill>
+          <Amount value={amount} />
+        </div>
+        <h3 className="mt-8 text-2xl font-semibold leading-[1.15] tracking-[-0.025em] [overflow-wrap:anywhere] sm:text-[26px]">{approval.label}</h3>
+        <p className="mt-2 text-[15.5px] leading-[1.55] text-fg2">
+          {invoice?.invoiceNo ? `${invoice.invoiceNo} · ` : ''}Your AI assistant wants to pay it.
+        </p>
+        {verdict ? (
+          <div className="mt-4">
+            <VerdictLine verdict={verdict} />
+            {approval.verdict?.suggestedName && (
+              <p className="mt-1 pl-7 text-[14.5px] text-fg2">
+                Did you mean <span className="font-semibold text-fg">{approval.verdict.suggestedName}</span>?
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="mt-4 text-[15px] text-fg2">Bound has no stored check for this payee.</p>
+        )}
 
-      <div className="mt-5 border-t border-black/10 pt-5">
-        {approval.verdict ? <VerdictCard result={approval.verdict} framed={false} /> : <p className="text-sm text-graphite">Bound has no stored check for this payee.</p>}
+        <CardFoot
+          className={`${expanded ? '' : 'mt-auto'} pt-8`}
+          avatar={<Avatar name={approval.label} flagged={flagged} />}
+          m1={m1}
+          m2={<Addr value={approval.wallet} />}
+          action={
+            !reviewing && (
+              <button
+                type="button"
+                onClick={() => setDetails((v) => !v)}
+                aria-expanded={details}
+                aria-label={`${details ? 'Hide' : 'Show'} the check and agent log for ${approval.label}`}
+                className={roundBtn}
+              >
+                <ArrowIcon />
+              </button>
+            )
+          }
+        />
+
+        {result ? (
+          <Outcome result={result} txHash={txHash} onDismiss={onDismiss} />
+        ) : reviewing ? null : (
+          <div className="mt-6 flex flex-col gap-3">
+            {approvable ? (
+              <>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                  <button onClick={review} disabled={busy || !isRoot || signBlocked} className={primaryBtn}>
+                    {phase === 'reviewing' ? 'Preparing…' : `Approve${amount ? ` ${amount}` : ''}`}
+                  </button>
+                  <button onClick={reject} disabled={busy} className={`${ghostBtn} !w-auto`}>
+                    {phase === 'rejecting' ? 'Rejecting…' : 'Reject'}
+                  </button>
+                </div>
+                <p className={hint}>Approving adds this wallet to your agent key&apos;s allowlist on Tempo. You sign the update with your root wallet, then the agent pays the invoice.</p>
+                {rootMessage && <p className="text-[13px] leading-relaxed font-medium text-acc2">{rootMessage}</p>}
+              </>
+            ) : (
+              <>
+                <p className="text-[15px] leading-relaxed text-fg">
+                  {verdict ? `${VERDICTS[verdict].label} payees can't be approved.` : "This payee can't be approved."} Reject it so the agent doesn&apos;t pay.
+                </p>
+                <button onClick={reject} disabled={busy} className={primaryBtn}>
+                  {phase === 'rejecting' ? 'Rejecting…' : 'Reject'}
+                </button>
+              </>
+            )}
+            {error && <p className={errorText}>{error}</p>}
+          </div>
+        )}
       </div>
 
-      {result ? (
-        <Outcome result={result} txHash={txHash} onDismiss={onDismiss} />
-      ) : prepared && (phase === 'review' || busy) && phase !== 'rejecting' ? (
-        <div className="mt-5 border-t border-black/10 pt-5">
-          <span className={sectionLabel}>Allowlist after you sign</span>
-          <p className={`mt-2 ${hint}`}>
+      {reviewing && prepared ? (
+        <div className="flex min-w-0 flex-col border-t border-line2 pt-8 lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0">
+          <h4 className="text-lg font-semibold tracking-[-0.015em]">Allowlist after you sign</h4>
+          <p className={`mt-1 ${hint}`}>
             Tempo replaces the agent key&apos;s whole recipient list with these {prepared.recipients.length} wallets. The agent can pay only them.
           </p>
-          <ul className="mt-3 flex flex-col">
+          <ul className="mt-4 flex flex-col">
             {prepared.recipients.map((r, i) => {
               const isNew = same(r, approval.wallet)
               const carried = prepared.carried.some((c) => same(c, r))
               const label = isNew ? approval.label : same(r, rootAddress) ? 'Your root account' : labelFor(r)
               return (
-                <li key={r} className={`flex flex-col gap-0.5 py-2.5 ${i ? 'border-t border-black/10' : ''}`}>
-                  <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                    <span className="text-sm text-ink">{label ?? 'Allowlisted wallet'}</span>
-                    {isNew && <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink">Adding</span>}
-                  </div>
-                  <span className="font-mono text-[11px] text-graphite [overflow-wrap:anywhere]">{r}</span>
-                  {carried && (
-                    <span className="mt-1 flex items-center gap-2 text-xs text-amber-900">
-                      <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
-                      Also added because another approval is pending
+                <li key={r} className={`flex gap-3 py-3 ${i ? 'border-t border-line2' : ''}`}>
+                  <Avatar name={label ?? '?'} size={32} />
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                      <span className="text-[15px] font-semibold">{label ?? 'Allowlisted wallet'}</span>
+                      {isNew && <Pill tone="green">Adding</Pill>}
+                    </div>
+                    <span className="font-mono text-[12.5px] text-fg3">
+                      <Addr value={r} />
                     </span>
-                  )}
+                    {carried && (
+                      <span className="mt-1 flex items-center gap-2 text-[13px] font-medium text-amber">
+                        <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber" />
+                        Also added because another approval is pending
+                      </span>
+                    )}
+                  </div>
                 </li>
               )
             })}
           </ul>
           <div className="mt-4 flex flex-col gap-2">
-            {notice && <p className="text-sm text-amber-900">{notice}</p>}
+            {notice && <p className="text-[14.5px] font-medium text-amber">{notice}</p>}
             {txHash && phase === 'review' ? (
               <button onClick={confirmAgain} className={primaryBtn}>
                 Check the sent update again
@@ -196,35 +284,22 @@ export function ApprovalCard({
               Cancel
             </button>
             {rootMessage && <p className={hint}>{rootMessage}</p>}
-            {txHash && (
-              <a href={txUrl(txHash)} target="_blank" rel="noreferrer" className="self-start font-mono text-[11px] text-graphite underline decoration-black/30 underline-offset-4 hover:text-ink">
+            {isTxHash(txHash) && (
+              <a href={txUrl(txHash)} target="_blank" rel="noreferrer" className={`self-start font-mono text-[12.5px] text-fg3 ${link}`}>
                 Allowlist update {short(txHash)} ↗
               </a>
             )}
             {error && <p className={errorText}>{error}</p>}
           </div>
         </div>
-      ) : (
-        <div className="mt-5 flex flex-col gap-2 border-t border-black/10 pt-5">
-          {approvable ? (
-            <>
-              <p className={hint}>Approving adds this wallet to your agent key&apos;s allowlist on Tempo. You sign the update with your root wallet, then the agent pays the invoice.</p>
-              <button onClick={review} disabled={busy || !isRoot || signBlocked} className={`${primaryBtn} mt-2`}>
-                {phase === 'reviewing' ? 'Preparing…' : 'Approve'}
-              </button>
-              {rootMessage && <p className={hint}>{rootMessage}</p>}
-            </>
-          ) : (
-            <p className="text-sm text-ink">
-              {verdict ? `${VERDICTS[verdict].label} payees can't be approved.` : "This payee can't be approved."} Reject it so the agent doesn&apos;t pay.
-            </p>
-          )}
-          <button onClick={reject} disabled={busy} className={approvable ? ghostBtn : `${primaryBtn} mt-2`}>
-            {phase === 'rejecting' ? 'Rejecting…' : 'Reject'}
-          </button>
-          {error && <p className={errorText}>{error}</p>}
+      ) : details ? (
+        <div className="flex min-w-0 flex-col gap-6 border-t border-line2 pt-8 lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0">
+          {approval.verdict && <VerdictCard result={approval.verdict} framed={false} />}
+          <div className="border-t border-line2 pt-6">
+            <InvoiceLog orgId={orgId} invoiceId={approval.invoiceId} status={invoice?.status ?? 'awaiting_approval'} bare />
+          </div>
         </div>
-      )}
+      ) : null}
     </article>
   )
 }
@@ -232,7 +307,7 @@ export function ApprovalCard({
 function Outcome({ result, txHash, onDismiss }: { result: { kind: 'approved'; payment: PayResult } | { kind: 'rejected' }; txHash: Hex | null; onDismiss: () => void }) {
   let text: string
   let payTx: Hex | undefined
-  const dot = result.kind === 'rejected' ? 'bg-graphite' : result.payment.status === 'paid' ? 'bg-emerald-600' : 'bg-amber-500'
+  const dot = result.kind === 'rejected' ? 'bg-fg3' : result.payment.status === 'paid' ? 'bg-ok' : 'bg-amber'
   if (result.kind === 'rejected') text = "Rejected. The agent won't pay this invoice."
   else if (result.payment.status === 'paid') {
     text = 'Approved and paid.'
@@ -241,19 +316,19 @@ function Outcome({ result, txHash, onDismiss }: { result: { kind: 'approved'; pa
   else text = `Approved. ${PAY_REASON[result.payment.reason ?? ''] ?? `Payment ${result.payment.status}.`}`
 
   return (
-    <div className="mt-5 flex flex-col gap-3 border-t border-black/10 pt-5">
-      <p className="flex items-start gap-2.5 text-sm text-ink">
-        <span className={`mt-[7px] inline-block h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
+    <div className="mt-6 flex flex-col gap-3 border-t border-line2 pt-6">
+      <p className="flex items-start gap-2.5 text-[15px] font-semibold">
+        <span className={`mt-[7px] inline-block h-2 w-2 shrink-0 rounded-full ${dot}`} />
         {text}
       </p>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-graphite">
-        {txHash && (
-          <a href={txUrl(txHash)} target="_blank" rel="noreferrer" className="underline decoration-black/30 underline-offset-4 hover:text-ink">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[12.5px] text-fg3">
+        {isTxHash(txHash) && (
+          <a href={txUrl(txHash)} target="_blank" rel="noreferrer" className={link}>
             Allowlist update {short(txHash)} ↗
           </a>
         )}
-        {payTx && (
-          <a href={txUrl(payTx)} target="_blank" rel="noreferrer" className="underline decoration-black/30 underline-offset-4 hover:text-ink">
+        {isTxHash(payTx) && (
+          <a href={txUrl(payTx)} target="_blank" rel="noreferrer" className={link}>
             Payment {short(payTx)} ↗
           </a>
         )}

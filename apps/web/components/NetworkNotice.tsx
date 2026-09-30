@@ -8,16 +8,16 @@ import type { NetworkCheck } from '@/lib/hooks'
 export function NetworkNotice({ check }: { check: NetworkCheck }) {
   if (!check.mismatch) return null
   return (
-    <div role="alert" className="flex flex-col gap-2 rounded-2xl border border-red-700/40 bg-red-50/70 p-7 text-sm leading-relaxed">
-      <p className="flex items-center gap-2.5 text-base text-red-800">
-        <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-red-600" />
+    <div role="alert" className="flex flex-col gap-2 rounded-card border border-acc/50 bg-acc/10 p-6 text-[15px] leading-relaxed sm:px-8">
+      <p className="flex items-center gap-2.5 text-lg font-semibold text-acc2">
+        <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-acc" />
         Wrong network
       </p>
-      <p className="text-ink">
+      <p className="text-fg">
         This site is set to <span className="font-mono text-[13px]">{check.web}</span> but the server runs{' '}
         <span className="font-mono text-[13px]">{check.server}</span> — transactions would go to the wrong network.
       </p>
-      <p className="text-graphite">Signing is turned off until they match.</p>
+      <p className="text-fg2">Signing is turned off until they match.</p>
     </div>
   )
 }

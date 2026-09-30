@@ -12,7 +12,8 @@ import { ConnectPanel } from '@/components/ConnectButton'
 import { NetworkNotice } from '@/components/NetworkNotice'
 import { Row } from '@/components/Row'
 import { Stepper, type Step, type StepState } from '@/components/Stepper'
-import { card, errorText, fieldClass, fieldLabel, ghostBtn, hint, primaryBtn, sectionLabel, short } from '@/components/ui'
+import { Pill } from '@/components/atoms'
+import { card, cardTitle, errorText, fieldClass, fieldLabel, ghostBtn, hint, isTxHash, link, primaryBtn, sectionLabel, short } from '@/components/ui'
 
 /** TIP-1022 virtual address registry precompile. */
 const ADDRESS_REGISTRY = '0xfdc0000000000000000000000000000000000000'
@@ -146,7 +147,7 @@ export function PayeeOnboarding() {
       summary: wallet ? short(wallet) : undefined,
       children: (
         <div className="flex flex-col gap-4">
-          <p className="text-sm leading-relaxed text-ink">Use the wallet your company receives payments to. Bound never asks for funds or keys.</p>
+          <p className="text-[15px] leading-relaxed text-fg2">Use the wallet your company receives payments to. Bound never asks for funds or keys.</p>
           <ConnectPanel />
         </div>
       ),
@@ -239,24 +240,28 @@ export function PayeeOnboarding() {
     <div className="flex min-w-0 flex-col gap-4">
       <NetworkNotice check={net} />
       <div className={card}>
-        <div className="mb-6 flex items-center justify-between gap-3">
-          <span className={sectionLabel}>Payee verification</span>
-          <span className="font-mono text-[11px] text-graphite">{active === -1 ? 'Complete' : `Step ${active + 1} of ${steps.length}`}</span>
+        <div className="mb-8 flex items-center justify-between gap-4">
+          {attested ? (
+            <Pill tone="green">Verified</Pill>
+          ) : (
+            <Pill>Payee verification</Pill>
+          )}
+          <span className="text-[15px] text-fg3">{active === -1 ? 'Complete' : `Step ${active + 1} of ${steps.length}`}</span>
         </div>
 
         <Stepper steps={steps} />
 
         {attested && row && (
-          <div className="mt-6 border-t border-black/10 pt-5">
-            <span className={sectionLabel}>Published</span>
-            <p className="mt-2 text-sm leading-relaxed text-ink">
+          <div className="mt-8 border-t border-line2 pt-6">
+            <h2 className={cardTitle}>Published</h2>
+            <p className="mt-2 text-[15px] leading-relaxed text-fg2">
               {row.legalName} is verified{published ? ` at level ${published.level}` : ''}. Anyone who checks {short(row.wallet)} now sees your company.
             </p>
             <div className="mt-4 flex flex-col gap-2">
               <Link href={`/payee/${row.wallet}`} className={primaryBtn}>
                 View your public profile <span aria-hidden="true">→</span>
               </Link>
-              {attestTx && (
+              {isTxHash(attestTx) && (
                 <a href={txUrl(attestTx)} target="_blank" rel="noreferrer" className={ghostBtn}>
                   View the transaction ↗
                 </a>
@@ -266,8 +271,8 @@ export function PayeeOnboarding() {
         )}
 
         {row && (
-          <div className="mt-6 flex items-center justify-between gap-3 border-t border-black/10 pt-4 font-mono text-[11px] text-graphite">
-            <span className="truncate">{row.id}</span>
+          <div className="mt-8 flex items-center justify-between gap-3 border-t border-line2 pt-5 font-mono text-[12.5px] text-fg3">
+            <span className="min-w-0 [overflow-wrap:anywhere]">{row.id}</span>
             <button
               onClick={() => {
                 save(null)
@@ -275,7 +280,7 @@ export function PayeeOnboarding() {
                 setPublished(null)
                 setDnsLost(false)
               }}
-              className="shrink-0 underline decoration-black/30 underline-offset-4 transition hover:text-ink"
+              className={`shrink-0 font-sans text-sm ${link}`}
             >
               {attested ? 'New verification' : 'Start over'}
             </button>
@@ -288,8 +293,8 @@ export function PayeeOnboarding() {
 
 function Waiting({ text }: { text: string }) {
   return (
-    <p className="flex items-center gap-3 text-sm text-graphite">
-      <span className="live-dot inline-block h-1.5 w-1.5 rounded-full bg-ink" />
+    <p className="flex items-center gap-3 text-sm text-fg3">
+      <span className="live-dot inline-block h-2 w-2 rounded-full bg-acc" />
       {text}
     </p>
   )
@@ -341,7 +346,7 @@ function DetailsStep({ wallet, notice, onCreated }: { wallet: string; notice: st
       </div>
       <div>
         <label htmlFor="lei" className={fieldLabel}>
-          LEI <span className="text-graphite">(optional)</span>
+          LEI <span className="font-normal text-fg3">(optional)</span>
         </label>
         <input id="lei" value={lei} onChange={(e) => setLei(e.target.value.toUpperCase())} placeholder="20 characters" autoComplete="off" spellCheck={false} maxLength={20} aria-invalid={!!fields.lei} className={fieldClass} />
         {fields.lei ? <p className={`mt-1.5 ${errorText}`}>{fields.lei}</p> : <p className={`mt-1.5 ${hint}`}>A Legal Entity Identifier raises your verification to level 2.</p>}
@@ -378,7 +383,7 @@ function SignStep({ row, blocked, onVerified }: { row: PayeeVerification; blocke
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm leading-relaxed text-ink">Sign a statement that this wallet belongs to your company. It&apos;s free and sends no transaction.</p>
+      <p className="text-[15px] leading-relaxed text-fg2">Sign a statement that this wallet belongs to your company. It&apos;s free and sends no transaction.</p>
       <div>
         <Row label="Legal name">{row.typedData.message.legalName}</Row>
         <Row label="Domain">{row.typedData.message.domain}</Row>
@@ -407,10 +412,10 @@ function CopyField({ label, value }: { label: string; value: string }) {
   }
   return (
     <div>
-      <span className="text-sm text-graphite">{label}</span>
-      <div className="mt-1.5 flex items-stretch gap-2">
-        <code className="min-w-0 flex-1 select-all break-all rounded-xl border border-black/15 bg-white/60 px-4 py-3 font-mono text-xs text-ink">{value}</code>
-        <button onClick={copy} className="w-[76px] shrink-0 rounded-xl border border-black/15 text-sm text-ink transition hover:bg-black/5">
+      <span className="text-sm text-fg2">{label}</span>
+      <div className="mt-2 flex items-stretch gap-2">
+        <code className="min-w-0 flex-1 select-all break-all rounded-btn border border-line bg-field px-4 py-3 font-mono text-[13px] text-fg">{value}</code>
+        <button onClick={copy} className="w-[84px] shrink-0 rounded-btn border border-edge text-sm font-bold text-fg transition hover:bg-raised">
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
@@ -439,8 +444,8 @@ function DnsStep({ row, lost, onVerified }: { row: PayeeVerification; lost: bool
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm leading-relaxed text-ink">
-        Add this TXT record at your DNS provider, then check it. <span className="font-medium">Keep it in place until your verification is published.</span>
+      <p className="text-[15px] leading-relaxed text-fg2">
+        Add this TXT record at your DNS provider, then check it. <span className="font-semibold text-fg">Keep it in place until your verification is published.</span>
       </p>
       {lost && <p className={errorText}>The record was missing when Bound checked it again. Add it back, then check.</p>}
       <div className="flex flex-col gap-3">
@@ -485,7 +490,7 @@ function LeiStep({ row, onVerified, onSkip }: { row: PayeeVerification; onVerifi
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm leading-relaxed text-ink">
+      <p className="text-[15px] leading-relaxed text-fg2">
         Bound looks up <span className="font-mono text-xs">{row.lei}</span> in the GLEIF register. It must be issued, and its legal name must match{' '}
         {row.legalName}.
       </p>
@@ -586,7 +591,7 @@ function MasterStep({ row, blocked, onChange, onSkip }: { row: PayeeVerification
     <div className="flex flex-col gap-4">
       {row.masterStatus === 'none' && (
         <>
-          <p className="text-sm leading-relaxed text-ink">
+          <p className="text-[15px] leading-relaxed text-fg2">
             Give every invoice its own deposit address that forwards to your wallet. Bound mines a TIP-1022 virtual master for you; you register it with one
             transaction. Registration is permanent.
           </p>
@@ -609,7 +614,7 @@ function MasterStep({ row, blocked, onChange, onSkip }: { row: PayeeVerification
 
       {row.masterStatus === 'mined' && (
         <>
-          <p className="text-sm leading-relaxed text-ink">Your virtual master is ready. Register it from your wallet: one transaction on Tempo.</p>
+          <p className="text-[15px] leading-relaxed text-fg2">Your virtual master is ready. Register it from your wallet: one transaction on Tempo.</p>
           <div>
             <Row label="Master ID">{row.masterId}</Row>
           </div>
@@ -626,7 +631,7 @@ function MasterStep({ row, blocked, onChange, onSkip }: { row: PayeeVerification
         <>
           <p className={errorText}>{row.masterId ? "The registration didn't confirm on Tempo." : 'Mining failed.'}</p>
           {txHash && (
-            <a href={txUrl(txHash)} target="_blank" rel="noreferrer" className={`${hint} underline underline-offset-4`}>
+            <a href={txUrl(txHash)} target="_blank" rel="noreferrer" className={`${hint} self-start ${link}`}>
               View the transaction ↗
             </a>
           )}
@@ -677,9 +682,9 @@ function PublishStep({
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm leading-relaxed text-ink">
+      <p className="text-[15px] leading-relaxed text-fg2">
         Bound checks your DNS record one last time, then writes your verification to the registry on Tempo.{' '}
-        <span className="font-medium">Keep the TXT record in place until this finishes.</span>
+        <span className="font-semibold text-fg">Keep the TXT record in place until this finishes.</span>
       </p>
       <div>
         <Row label="Legal name">{row.legalName}</Row>
