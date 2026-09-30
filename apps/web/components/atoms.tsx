@@ -45,7 +45,16 @@ export function Avatar({ name, flagged = false, size = 40 }: { name: string | nu
       </span>
     )
   const n = (name ?? '').replace(/[^\p{L}\p{N}]/gu, '')
-  const initial = n ? n[0]!.toUpperCase() : '·'
+  if (!n)
+    return (
+      <span aria-hidden="true" style={style} className="grid shrink-0 place-items-center rounded-full bg-raised text-fg3">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path d="M4 1.75h5.5L12.25 4.5v9.75H4z" strokeLinejoin="round" />
+          <path d="M6.25 7.5h3.5M6.25 10h3.5" strokeLinecap="round" />
+        </svg>
+      </span>
+    )
+  const initial = n[0]!.toUpperCase()
   let h = 0
   for (const c of n) h = (h * 31 + c.charCodeAt(0)) >>> 0
   return (

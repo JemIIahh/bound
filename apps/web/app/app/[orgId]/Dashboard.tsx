@@ -124,7 +124,7 @@ export function Dashboard({ orgId }: { orgId: string }) {
           </div>
         </div>
 
-        <div className="grid grid-flow-row-dense grid-cols-1 gap-4 md:grid-cols-2 lg:gap-6 min-[1100px]:grid-cols-3">
+        <div className="grid grid-flow-row-dense grid-cols-1 gap-4 min-[768px]:grid-cols-2 lg:gap-6 min-[1100px]:grid-cols-3">
           {queue.map((a) => (
             <ApprovalCard
               key={a.id}
