@@ -61,7 +61,7 @@ export function VerdictCard({ result, framed = true }: { result: VerifyResult; f
         <VerdictBadge verdict={result.verdict} />
         {framed && result.checkId && <span className="font-mono text-[12.5px] text-fg3">{result.checkId}</span>}
       </div>
-      <p className={`${framed ? `mt-8 ${cardTitle}` : 'mt-4 text-lg font-semibold leading-snug tracking-[-0.015em] text-fg'}`}>{v.summary}</p>
+      <p className={`${framed ? `mt-6 ${cardTitle}` : 'mt-4 text-lg font-semibold leading-snug tracking-[-0.015em] text-fg'}`}>{v.summary}</p>
       {result.suggestedName && (
         <p className="mt-2 text-[15px] text-fg2">
           Did you mean <span className="font-semibold text-fg">{result.suggestedName}</span>?

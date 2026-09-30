@@ -17,7 +17,7 @@ export const sectionTitle = 'text-2xl font-bold tracking-[-0.03em] text-fg sm:te
 export const fieldClass =
   'w-full rounded-btn border border-line bg-field px-4 py-3 font-mono text-sm text-fg outline-none transition placeholder:text-fg3 focus:border-fg3 aria-[invalid=true]:border-acc/70'
 export const primaryBtn =
-  'inline-flex h-12 w-full items-center justify-center gap-2 rounded-btn bg-btn px-6 text-[15px] font-bold text-btn-fg transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:brightness-100'
+  'inline-flex h-12 w-full items-center justify-center gap-2 rounded-btn bg-btn px-6 text-[15px] font-bold text-btn-fg transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-raised disabled:text-fg3 disabled:hover:brightness-100'
 export const ghostBtn =
   'inline-flex h-12 w-full items-center justify-center gap-2 rounded-btn border border-edge px-6 text-[15px] font-bold text-fg transition hover:bg-fg/5 disabled:cursor-not-allowed disabled:opacity-40'
 export const smallBtn =
