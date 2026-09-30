@@ -151,7 +151,7 @@ export function Lab({ orgId }: { orgId: string }) {
               )}
             </div>
 
-            <div>
+            <div className="flex flex-1 flex-col">
               <label htmlFor="labText" className={fieldLabel}>
                 Invoice
               </label>
@@ -161,13 +161,13 @@ export function Lab({ orgId }: { orgId: string }) {
                 onChange={(e) => setText(e.target.value)}
                 rows={12}
                 placeholder="From: …&#10;Invoice …&#10;Pay to (Tempo): 0x…"
-                className={`${fieldClass} resize-y text-[13px] leading-relaxed`}
+                className={`${fieldClass} flex-1 resize-y text-[13px] leading-relaxed`}
               />
             </div>
 
             <GuardSwitch off={guardOff} onChange={setGuardOff} />
 
-            <div className="mt-auto flex flex-col gap-2">
+            <div className="flex flex-col gap-2">
               <button type="submit" disabled={busy || !text.trim()} className={primaryBtn}>
                 {busy ? 'Starting…' : guardOff ? 'Run with the guard off' : 'Run the agent'}
               </button>
@@ -189,6 +189,21 @@ export function Lab({ orgId }: { orgId: string }) {
               <p className="mt-2 text-[15px] leading-relaxed text-fg2">
                 Each run shows the agent&apos;s log, what Bound decided, and — with the guard off — what Tempo did with the payment.
               </p>
+              <ul className="mt-8 flex flex-col border-t border-line2 text-[15px] text-fg2">
+                {[
+                  ['bg-acc', 'Blocked by Bound', 'the wallet imitates or isn’t the supplier'],
+                  ['bg-acc', 'Blocked by Tempo', 'guard off, and the wallet was never approved'],
+                  ['bg-amber', 'Needs approval', 'a real supplier you haven’t approved yet'],
+                  ['bg-ok', 'Paid', 'verified and approved'],
+                ].map(([dot, title, text]) => (
+                  <li key={title} className="flex items-baseline gap-3 border-b border-line2 py-3">
+                    <span className={`h-2 w-2 shrink-0 translate-y-[-1px] rounded-full ${dot}`} />
+                    <span>
+                      <b className="font-semibold text-fg">{title}</b> — {text}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
         </div>

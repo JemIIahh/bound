@@ -172,7 +172,7 @@ export function InvoiceCard({
       className={`${card} flex min-w-0 flex-col gap-8 ${open ? 'col-span-full lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] lg:gap-12' : ''} ${hidden ? '!hidden' : ''}`}
       aria-label={`${title}${inv.invoiceNo ? ` ${inv.invoiceNo}` : ''}`}
     >
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className={`flex min-w-0 flex-1 flex-col ${open ? 'lg:self-start' : ''}`}>
         <div className="flex items-center justify-between gap-4">
           <StatusBadge status={inv.status} />
           {amount && <Amount value={amount} />}
@@ -195,7 +195,7 @@ export function InvoiceCard({
           </p>
         )}
         <CardFoot
-          className="mt-auto pt-8"
+          className={`${open ? '' : 'mt-auto'} pt-8`}
           avatar={<Avatar name={inv.payeeName} flagged={!!flag} />}
           m1={m1}
           m2={inv.address ? short(inv.address) : undefined}

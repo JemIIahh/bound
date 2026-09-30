@@ -141,11 +141,12 @@ export function ApprovalCard({
     confirming: 'Confirming on Tempo…',
   }[phase as string] ?? 'Sign allowlist update'
 
-  const rootMessage = !isConnected
-    ? `Connect this organization's root wallet (${short(rootAddress)}) to approve.`
-    : !isRoot
-      ? `The connected wallet isn't this organization's root account. Switch to ${short(rootAddress)} to approve.`
-      : null
+  const root = <span className="whitespace-nowrap font-mono text-[12px]">{short(rootAddress)}</span>
+  const rootMessage = !isConnected ? (
+    <>Connect this organization&apos;s root wallet ({root}) to approve.</>
+  ) : !isRoot ? (
+    <>The connected wallet isn&apos;t this organization&apos;s root account. Switch to {root} to approve.</>
+  ) : null
 
   const reviewing = !result && !!prepared && (phase === 'review' || busy) && phase !== 'rejecting'
   const expanded = reviewing || details
@@ -159,7 +160,7 @@ export function ApprovalCard({
       className={`${highlight ? invCard : card} flex min-w-0 flex-col gap-8 ${expanded ? 'col-span-full lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] lg:gap-12' : ''} ${hidden ? '!hidden' : ''}`}
       aria-label={`Approval for ${approval.label}`}
     >
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className={`flex min-w-0 flex-1 flex-col ${expanded ? 'lg:self-start' : ''}`}>
         <div className="flex items-center justify-between gap-4">
           <Pill tone={result?.kind === 'approved' ? 'green' : 'grey'} dot={result ? undefined : 'bg-[#C98A12]'}>
             {tag}
@@ -184,7 +185,7 @@ export function ApprovalCard({
         )}
 
         <CardFoot
-          className="mt-auto pt-8"
+          className={`${expanded ? '' : 'mt-auto'} pt-8`}
           avatar={<Avatar name={approval.label} flagged={flagged} />}
           m1={m1}
           m2={approval.wallet}
@@ -292,7 +293,9 @@ export function ApprovalCard({
       ) : details ? (
         <div className="flex min-w-0 flex-col gap-6 border-t border-line2 pt-8 lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0">
           {approval.verdict && <VerdictCard result={approval.verdict} framed={false} />}
-          <InvoiceLog orgId={orgId} invoiceId={approval.invoiceId} status={invoice?.status ?? 'awaiting_approval'} bare />
+          <div className="border-t border-line2 pt-6">
+            <InvoiceLog orgId={orgId} invoiceId={approval.invoiceId} status={invoice?.status ?? 'awaiting_approval'} bare />
+          </div>
         </div>
       ) : null}
     </article>
