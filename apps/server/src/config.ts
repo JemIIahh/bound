@@ -2,6 +2,8 @@ import 'dotenv/config'
 import { z } from 'zod'
 
 const hex = z.string().regex(/^0x[0-9a-fA-F]+$/)
+/** A whole number from env, where an empty value means "use the default". */
+const intEnv = (def: number, min = 0) => z.preprocess((v) => (v === '' ? undefined : v), z.coerce.number().int().min(min).default(def))
 const schema = z.object({
   TEMPO_NETWORK: z.enum(['testnet', 'mainnet']).default('testnet'),
   BOUND_REGISTRY_ADDRESS: hex,
@@ -17,6 +19,9 @@ const schema = z.object({
   DEMO_ORG_ID: z.string().optional().transform((v) => (v?.trim() ? v.trim() : undefined)),
   // Attack lab (guard-off demo). Always on for testnet; on mainnet only when explicitly enabled.
   LAB_ENABLED: z.enum(['true', 'false', '']).optional().transform((v) => v === 'true'),
+  // Public demo (/v1/demo, testnet only): runs per client IP per hour, and runs per rolling day for everyone (0 pauses it).
+  DEMO_RUNS_PER_IP_HOUR: intEnv(5, 1),
+  DEMO_RUNS_PER_DAY: intEnv(300),
 })
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
@@ -34,6 +39,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     demoRootKey: e.DEMO_ROOT_PRIVATE_KEY,
     demoOrgId: e.DEMO_ORG_ID,
     labEnabled: e.LAB_ENABLED,
+    demoRunsPerIpHour: e.DEMO_RUNS_PER_IP_HOUR,
+    demoRunsPerDay: e.DEMO_RUNS_PER_DAY,
   }
 }
 export type Config = ReturnType<typeof loadConfig>

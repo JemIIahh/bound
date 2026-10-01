@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS payments (id TEXT PRIMARY KEY, org_id TEXT NOT NULL, 
 CREATE UNIQUE INDEX IF NOT EXISTS payments_invoice_unique ON payments (invoice_id);
 CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, org_id TEXT, kind TEXT NOT NULL, invoice_id TEXT, detail_json TEXT NOT NULL DEFAULT '{}', tx_hash TEXT, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS indexer_state (id TEXT PRIMARY KEY, last_block INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS demo_runs (id TEXT PRIMARY KEY, invoice_id TEXT NOT NULL, guard_off INTEGER NOT NULL, created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS demo_runs_created ON demo_runs (created_at);
 `
 
 export function migrate(db: Db) {

@@ -8,6 +8,7 @@ import { perOrgLimit } from '../rate-limit'
 import { nowSeconds } from '../services/events'
 import type { ServiceDeps } from '../services/payments'
 import { runAgent } from '../agent/run'
+import type { AgentMode } from '../agent/tools'
 import { MAX_TEXT_CHARS, startAgent, type AgentRunner } from './invoices'
 
 const body = z.object({
@@ -27,14 +28,21 @@ export function labRouter(deps: ServiceDeps, run: AgentRunner = runAgent, limit:
   const r = Router()
   r.post('/lab/:orgId/run', requireOrg(deps), limit, (req, res) => {
     const b = body.parse(req.body)
-    const id = newId('inv')
-    const orgId: string = res.locals.org.id // set by requireOrg
-    deps.db.insert(invoices).values({ id, orgId, raw: b.text, lab: 1, createdAt: nowSeconds() }).run()
-    startAgent(deps, run, id, b.guardOff ? 'guard_off' : 'guarded')
+    const id = createLabInvoice(deps, res.locals.org.id, b.text) // org set by requireOrg
+    startAgent(deps, run, id, labMode(b.guardOff))
     res.status(202).json({ invoiceId: id })
   })
   return r
 }
+
+/** Stores an attack-lab invoice (lab = 1) for the org; start the agent on it with startAgent(…, labMode(guardOff)). */
+export function createLabInvoice(deps: Pick<ServiceDeps, 'db'>, orgId: string, text: string): string {
+  const id = newId('inv')
+  deps.db.insert(invoices).values({ id, orgId, raw: text, lab: 1, createdAt: nowSeconds() }).run()
+  return id
+}
+
+export const labMode = (guardOff: boolean): AgentMode => (guardOff ? 'guard_off' : 'guarded')
 
 /** Mounts the lab router when the network/config allows it. Returns whether it was mounted. */
 export function mountLab(app: Express, deps: ServiceDeps, run: AgentRunner = runAgent): boolean {
