@@ -165,6 +165,15 @@ export type InvoiceDetail = OrgInvoice & {
   payment: { status: string; toAddress: Hex; amountBase: string; txHash: Hex | null; txUrl: string | null } | null
 }
 
+/** One attack-lab run as the result card reads it: an org invoice, or a public demo run (`GET /v1/demo/runs/:runId`). */
+export type RunDetail = Omit<InvoiceDetail, 'orgId' | 'raw'> & {
+  /** Public demo only: the model call failed (missing or rejected key, outage). */
+  offline?: boolean
+}
+
+/** `GET /v1/demo`: whether the public demo can start a run now. `message` is shown as is. */
+export type DemoStatus = { status: 'ready' | 'unavailable' | 'offline' | 'busy'; message: string | null; runsPerHour: number; maxChars: number }
+
 /** `POST /v1/orgs/:orgId/approvals/:id/prepare` */
 export type PreparedApproval = {
   call: RootCall
@@ -183,6 +192,8 @@ export class ApiError extends Error {
     message: string,
     readonly status: number,
     readonly issues: ApiIssue[] = [],
+    /** Machine-readable reason some routes add (the public demo: unavailable, offline, busy). */
+    readonly code?: string,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -253,12 +264,18 @@ export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
     throw new ApiError(`Can't reach the Bound API at ${API_URL}.`, 0)
   }
 
-  const body = (await res.json().catch(() => null)) as { error?: string; issues?: ApiIssue[] } | null
+  const body = (await res.json().catch(() => null)) as { error?: string; issues?: ApiIssue[]; code?: string } | null
   if (!res.ok) {
     const issues = Array.isArray(body?.issues) ? body.issues : []
+    const code = typeof body?.code === 'string' ? body.code : undefined
+    // an error with a code carries a message written for people, even on a 503
     const message =
-      res.status >= 500 ? `The Bound API had a problem (${res.status}). Try again in a moment.` : (issues[0]?.message ?? body?.error ?? `Request failed (${res.status})`)
-    throw new ApiError(message, res.status, issues)
+      code && body?.error
+        ? body.error
+        : res.status >= 500
+          ? `The Bound API had a problem (${res.status}). Try again in a moment.`
+          : (issues[0]?.message ?? body?.error ?? `Request failed (${res.status})`)
+    throw new ApiError(message, res.status, issues, code)
   }
   return body as T
 }

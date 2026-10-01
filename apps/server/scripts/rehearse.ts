@@ -10,11 +10,11 @@
 // invoices), seed-demo.ts and mine-lookalike.ts already run. Scenario 1 needs an org that has never paid
 // Acme: pass --fresh-org to create and authorize a new demo org (same demo root) through the API.
 // Usage: TEMPO_NETWORK=testnet tsx scripts/rehearse.ts [--fresh-org]
-import { createClient, getAddress, http, parseEventLogs, publicActions, walletActions, type Address, type Hex } from 'viem'
+import { getAddress, parseEventLogs, type Address, type Hex } from 'viem'
 import { privateKeyToAddress } from 'viem/accounts'
-import { Abis, Account } from 'viem/tempo'
+import { Abis } from 'viem/tempo'
 import { memoFromInvoice, txUrl } from '@bound/core'
-import { assertTestnetChain, die, need, needKey, requireTestnet, SERVER_ENV, setEnv } from './lib'
+import { assertTestnetChain, boundApi, createAuthorizedDemoOrg, demoRootClient, die, need, needKey, requireTestnet, SERVER_ENV, setEnv, signAsRoot } from './lib'
 
 const { net, pub } = requireTestnet()
 if (!process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY === 'sk-ant-xxx') {
@@ -25,8 +25,7 @@ await assertTestnetChain(pub)
 
 const API = process.env.BOUND_API_URL || `http://localhost:${process.env.PORT || 8787}`
 const rootKey = needKey('DEMO_ROOT_PRIVATE_KEY')
-const root = Account.fromSecp256k1(rootKey)
-const rootClient = createClient({ account: root, chain: net.chain, transport: http(net.rpc) }).extend(publicActions).extend(walletActions)
+const rootClient = demoRootClient(net, rootKey)
 await assertTestnetChain(rootClient)
 
 const payeeName = need('DEMO_PAYEE_NAME')
@@ -35,34 +34,19 @@ const domain = need('DEMO_PAYEE_DOMAIN_ATTESTED')
 const lookalike = getAddress(need('LAB_LOOKALIKE_ADDRESS'))
 const unregistered = getAddress(need('LAB_UNREGISTERED_ADDRESS'))
 
-async function api(method: string, path: string, body?: unknown, token?: string) {
-  const res = await fetch(`${API}${path}`, {
-    method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
-  const json: any = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(`${method} ${path} → ${res.status} ${JSON.stringify(json)}`)
-  return json
-}
+const api = boundApi(API)
 
 const health = await api('GET', '/health').catch((e) => die(`server not reachable at ${API} (${(e as Error).message}); start it with \`pnpm --filter @bound/server dev\``))
 if (health.network !== 'testnet') die(`server at ${API} runs on ${health.network}, expected testnet`)
-
-/** Signs a prepared call with the demo root (demo only: in the product the customer's wallet signs). */
-async function signAsRoot(call: { to: Address; data: Hex }): Promise<Hex> {
-  const r: any = await rootClient.sendTransactionSync({ ...call, throwOnReceiptRevert: true } as any)
-  return r.transactionHash as Hex
-}
 
 // ---- org ----
 let orgId = need('DEMO_ORG_ID')
 let token = need('DEMO_ORG_TOKEN')
 if (process.argv.includes('--fresh-org')) {
-  const created = await api('POST', '/v1/orgs', { name: `Northwind Trading (rehearsal ${new Date().toISOString().slice(0, 16)})`, rootAddress: root.address, limitUsd: '50', periodSeconds: 86_400 })
-  orgId = created.org.id
-  token = created.token
-  const authTx = await signAsRoot(created.authorizeCall)
-  await api('POST', `/v1/orgs/${orgId}/authorized`, { txHash: authTx }, token)
+  const fresh = await createAuthorizedDemoOrg(api, rootClient, `Northwind Trading (rehearsal ${new Date().toISOString().slice(0, 16)})`)
+  orgId = fresh.orgId
+  token = fresh.token
+  const authTx = fresh.authTx
   setEnv(SERVER_ENV, { DEMO_ORG_ID: orgId, DEMO_ORG_TOKEN: token, DEMO_ORG_AUTHORIZE_TX: authTx })
   console.log(`fresh org ${orgId} authorized: ${txUrl('testnet', authTx)} (DEMO_ORG_ID/DEMO_ORG_TOKEN updated)`)
 }
@@ -123,7 +107,7 @@ await scenario(1, 'Real Acme invoice INV-1042 (first time)', 'awaiting_approval 
   const ap = (await overview()).approvals.find((a: any) => a.invoiceId === inv.id && a.status === 'pending')
   if (!ap) return { got: 'no pending approval for the invoice', pass: false, link: '' }
   const prepared = await api('POST', `/v1/orgs/${orgId}/approvals/${ap.id}/prepare`, {}, token)
-  const allowTx = await signAsRoot(prepared.call)
+  const allowTx = await signAsRoot(rootClient, prepared.call)
   const confirmed = await api('POST', `/v1/orgs/${orgId}/approvals/${ap.id}/confirm`, { txHash: allowTx }, token)
   const after = await waitInvoice(inv.id)
   const tx = after.payment?.txHash as Hex | undefined

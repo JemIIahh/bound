@@ -17,5 +17,5 @@ export function decryptSecret(blob: string, secret: `0x${string}`): string {
 }
 
 export const sha256 = (s: string) => createHash('sha256').update(s).digest('hex')
-export const newId = (prefix: string) => `${prefix}_${randomBytes(9).toString('base64url')}`
+export const newId = (prefix: string, bytes = 9) => `${prefix}_${randomBytes(bytes).toString('base64url')}`
 export const newToken = () => randomBytes(24).toString('base64url')

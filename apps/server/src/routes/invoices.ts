@@ -9,7 +9,7 @@ import { invoices, payments } from '../db/schema'
 import { perOrgLimit } from '../rate-limit'
 import { nowSeconds } from '../services/events'
 import type { ServiceDeps } from '../services/payments'
-import { isPdfBase64, runAgent } from '../agent/run'
+import { isPdfBase64, runAgent, type AgentLogEntry } from '../agent/run'
 
 export type AgentRunner = typeof runAgent
 
@@ -44,6 +44,21 @@ const parseJson = (s: string | null) => {
   try { return JSON.parse(s) } catch { return null }
 }
 
+/** An invoice as the API returns it: parsed verdict and agent log, plus its payment (with explorer link). */
+export function invoiceView(deps: Pick<ServiceDeps, 'db' | 'chain'>, inv: typeof invoices.$inferSelect) {
+  const pay = deps.db.select().from(payments).where(eq(payments.invoiceId, inv.id)).get()
+  const { verdictJson, agentLog, raw, ...rest } = inv
+  return {
+    ...rest,
+    raw: raw.startsWith('pdf:') ? '[pdf]' : raw, // never echo (or scan) a stored PDF's base64
+    verdict: parseJson(verdictJson),
+    agentLog: (parseJson(agentLog) ?? []) as AgentLogEntry[],
+    payment: pay
+      ? { status: pay.status, toAddress: pay.toAddress, amountBase: pay.amountBase, txHash: pay.txHash, txUrl: pay.txHash ? txUrl(deps.chain.network, pay.txHash as `0x${string}`) : null }
+      : null,
+  }
+}
+
 export function invoicesRouter(deps: ServiceDeps, run: AgentRunner = runAgent, limit: RequestHandler = perOrgLimit(10)) {
   const r = Router()
   const auth = requireOrg(deps)
@@ -60,17 +75,7 @@ export function invoicesRouter(deps: ServiceDeps, run: AgentRunner = runAgent, l
   r.get('/orgs/:orgId/invoices/:invoiceId', auth, (req, res) => {
     const inv = deps.db.select().from(invoices).where(and(eq(invoices.id, req.params.invoiceId), eq(invoices.orgId, req.params.orgId))).get()
     if (!inv) throw new HttpError(404, 'Invoice not found')
-    const pay = deps.db.select().from(payments).where(eq(payments.invoiceId, inv.id)).get()
-    const { verdictJson, agentLog, raw, ...rest } = inv
-    res.json({
-      ...rest,
-      raw: raw.startsWith('pdf:') ? '[pdf]' : raw, // never echo (or scan) a stored PDF's base64
-      verdict: parseJson(verdictJson),
-      agentLog: parseJson(agentLog) ?? [],
-      payment: pay
-        ? { status: pay.status, toAddress: pay.toAddress, amountBase: pay.amountBase, txHash: pay.txHash, txUrl: pay.txHash ? txUrl(deps.chain.network, pay.txHash as `0x${string}`) : null }
-        : null,
-    })
+    res.json(invoiceView(deps, inv))
   })
 
   return r

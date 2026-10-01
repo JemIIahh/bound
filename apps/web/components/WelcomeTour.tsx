@@ -61,6 +61,7 @@ const STEPS: Step[] = [
 ]
 
 const START_LINKS = [
+  { href: '/try', label: 'Try the attack' },
   { href: '/app', label: 'I pay suppliers' },
   { href: '/payee', label: "I'm a supplier" },
   { href: '/verify', label: 'Check a wallet' },
@@ -187,7 +188,7 @@ export function WelcomeTour() {
         <div className="flex min-h-[136px] flex-col justify-end px-6 pb-5 pt-3 sm:min-h-[124px] sm:px-9 sm:pb-8">
           {last ? (
             <div className="flex flex-col gap-3 sm:flex-row-reverse sm:items-center sm:justify-between sm:gap-6">
-              <button ref={primary} type="button" onClick={close} className={`${primaryBtn} sm:w-auto sm:px-10`}>
+              <button ref={primary} type="button" onClick={close} className={`${primaryBtn} shrink-0 whitespace-nowrap sm:w-auto sm:px-10`}>
                 Got it
               </button>
               <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[13px] text-fg3 sm:justify-start sm:text-[15px]">

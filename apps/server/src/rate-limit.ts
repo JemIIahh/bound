@@ -9,6 +9,8 @@ export type RateLimitOptions = {
   now?: () => number
   /** Upper bound on tracked keys (memory guard). */
   maxKeys?: number
+  /** The 429 body's `error` (default "Too many requests"). */
+  message?: string
 }
 
 /**
@@ -41,7 +43,7 @@ export function rateLimit(o: RateLimitOptions): RequestHandler {
     }
     if (b.tokens < 1) {
       res.set('retry-after', String(Math.max(1, Math.ceil((1 - b.tokens) / perMs / 1000))))
-      res.status(429).json({ error: 'Too many requests' })
+      res.status(429).json({ error: o.message ?? 'Too many requests' })
       return
     }
     b.tokens -= 1
@@ -50,12 +52,13 @@ export function rateLimit(o: RateLimitOptions): RequestHandler {
 }
 
 const MINUTE = 60_000
+export const HOUR = 60 * MINUTE
 
-/**
- * Per client IP (public routes: /mcp, POST /v1/verify). Behind a reverse proxy, set Express
- * `trust proxy` so req.ip is the client, not the proxy.
- */
-export const perIpLimit = (limit = 60) => rateLimit({ limit, windowMs: MINUTE, key: (req) => req.ip ?? req.socket.remoteAddress ?? 'unknown' })
+/** The client IP. Behind a reverse proxy, set Express `trust proxy` so req.ip is the client, not the proxy. */
+export const clientIp = (req: Request) => req.ip ?? req.socket.remoteAddress ?? 'unknown'
+
+/** Per client IP (public routes: /mcp, POST /v1/verify). */
+export const perIpLimit = (limit = 60, windowMs = MINUTE, message?: string) => rateLimit({ limit, windowMs, key: clientIp, message })
 
 /** Per org (costly routes: invoice submission, lab runs). Mount after requireOrg so only the org's own token spends it. */
 export const perOrgLimit = (limit = 10) => rateLimit({ limit, windowMs: MINUTE, key: (req) => (typeof req.params.orgId === 'string' ? req.params.orgId : undefined) })

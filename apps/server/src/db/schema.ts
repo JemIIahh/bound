@@ -116,3 +116,19 @@ export const indexerState = sqliteTable('indexer_state', {
   id: text('id').primaryKey(),
   lastBlock: integer('last_block').notNull(),
 })
+
+/** Public demo runs (POST /v1/demo/runs): the unguessable public id of a lab invoice in the demo org. */
+export const demoRuns = sqliteTable('demo_runs', {
+  id: text('id').primaryKey(),                     // run_<128-bit random>
+  invoiceId: text('invoice_id').notNull(),
+  guardOff: integer('guard_off').notNull(),
+  createdAt: integer('created_at').notNull(),
+})
+
+/** Early-access sign-ups (POST /v1/signups). Never listed by the API. */
+export const signups = sqliteTable('signups', {
+  email: text('email').primaryKey(),               // trimmed, lower-cased
+  role: text('role').notNull(),                    // payer | supplier | builder | other
+  company: text('company'),
+  createdAt: integer('created_at').notNull(),
+})

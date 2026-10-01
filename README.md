@@ -52,8 +52,8 @@ PAY needs both a verdict and the onchain allowlist. Pins (wallets a human approv
 |---|---|
 | `packages/core` | Verdict engine (names, confusables, lookalike addresses/domains), Tempo helpers (networks, keychain calls, allowlist reads, virtual-address resolution, pay with memo), registry ABI |
 | `contracts` | `BoundRegistry` (Foundry) |
-| `apps/server` | Express API + SQLite: payee verification (EIP-712 wallet signature, DNS TXT, GLEIF LEI, virtual master), registry indexer, `/v1/verify`, orgs, approvals and payments, the reference AP agent, the attack lab and the public MCP endpoint |
-| `apps/web` | Next.js app: landing, public lookup/verify, payee verification, org dashboard and attack lab |
+| `apps/server` | Express API + SQLite: payee verification (EIP-712 wallet signature, DNS TXT, GLEIF LEI, virtual master), registry indexer, `/v1/verify`, orgs, approvals and payments, the reference AP agent, the attack lab, the public demo, early-access sign-ups and the public MCP endpoint |
+| `apps/web` | Next.js app: landing (with an early-access sign-up), public lookup/verify, payee verification, org dashboard, attack lab and the public demo (`/try`) |
 | `packages/sdk` | `@bound/sdk`: typed client for the verify API, plus the allowlist helpers used to approve payees |
 
 ## Run locally (Tempo testnet)
@@ -79,6 +79,7 @@ Then add `ANTHROPIC_API_KEY` to `apps/server/.env` (the agent reads invoices wit
 pnpm dev:server                                   # http://localhost:8787
 pnpm dev:web                                      # http://localhost:3000
 pnpm --filter @bound/server demo:rehearse         # the 5 demo scenarios, asserted, with explorer links
+pnpm --filter @bound/server demo:public-org       # once: the separate org the public /try demo runs on
 pnpm --filter @bound/server demo:rehearse --fresh-org   # re-run on a new org (scenario 1 needs an org that has never paid Acme)
 ```
 
@@ -128,6 +129,9 @@ The server (`apps/server`) and the web app (`apps/web`) deploy separately, for e
 | server | `WEB_ORIGIN` | The web app's URL (e.g. the Vercel URL), used for CORS |
 | server | `LAB_ENABLED` | Leave unset or `false` on mainnet unless the attack lab should run there (see below) |
 | server | `DEMO_ORG_ID` | The only org `POST /v1/orgs/:orgId/authorize-demo` will sign for (the seeded demo org). Set it whenever `DEMO_ROOT_PRIVATE_KEY` is set |
+| server | `DEMO_PUBLIC_ORG_ID` | The org the public demo (`/try`) runs on, created by `demo:public-org`. Never the same as `DEMO_ORG_ID`; unset, the public demo answers 503 |
+| server | `DEMO_RUNS_PER_IP_HOUR`, `DEMO_RUNS_PER_DAY` | Public demo limits: runs per client IP per hour (default 6) and per rolling 24 hours for everyone (default 300; `0` pauses the demo) |
+| server | `SIGNUPS_PER_IP_HOUR` | Early-access sign-ups per client IP per hour (default 10) |
 | server | `DEMO_ROOT_PRIVATE_KEY` | Demo only. Keep it unset on mainnet unless you are filming the demo |
 | web | `NEXT_PUBLIC_API_URL` | The server's public URL |
 | web | `NEXT_PUBLIC_TEMPO_NETWORK` | `testnet` or `mainnet`, the same as the server's `TEMPO_NETWORK`. If they differ, the web app shows a red notice and disables every signing button |
@@ -160,6 +164,30 @@ The REST equivalent is `POST /v1/verify` with `{ "address", "payeeName", "sender
 ## Attack lab and `LAB_ENABLED`
 
 The attack lab (`POST /v1/lab/:orgId/run`) runs the agent on an attacker-written invoice. With *guard off*, Bound's payee checks are skipped and the lab only broadcasts transfers that Tempo is certain to refuse, so the refusal shows up as a public reverted transaction. It is always on for testnet. On mainnet it's off unless `LAB_ENABLED=true`. **Note:** on mainnet, `LAB_ENABLED=true` also enables *guarded* lab runs, and those go through the normal payment path, so they **can make real payments to payees the org has approved**.
+
+## Public demo (`/try`)
+
+`/try` is the attack lab for visitors with no wallet: write the scam invoice (or pick a preset), switch Bound's software on or off, and watch the agent. It runs the same lab flow on its own org, `DEMO_PUBLIC_ORG_ID`, never on the filmed demo org (`DEMO_ORG_ID`); that org's token and agent key never leave the server. Create it once the server is running (testnet only):
+
+```bash
+pnpm --filter @bound/server demo:public-org   # fresh org, demo root, 50 USD/day; writes DEMO_PUBLIC_ORG_ID, then restart the server
+```
+
+It creates the org through the API (`BOUND_API_URL`, default the local server), authorizes its agent key with the demo root, and records the id (and the org token, never printed) in `apps/server/.env`; it refuses to replace an existing one without `--replace`. On a hosted server, point `BOUND_API_URL` at it and set `DEMO_PUBLIC_ORG_ID` in its environment. The new key's allowlist starts empty of payees, so a guarded public run can block or ask for approval but pays no one until a human approves a payee for that org.
+
+- `GET /v1/demo`: whether a run can start (`ready`, `unavailable`, `offline` or `busy`), the per-hour limit and the 4,000-character invoice cap.
+- `POST /v1/demo/runs` `{ text, guardOff }` → `202 { runId }`, a 128-bit id. `503` when `DEMO_PUBLIC_ORG_ID` isn't set up (no fallback to `DEMO_ORG_ID`) or `ANTHROPIC_API_KEY` is empty, `429` past `DEMO_RUNS_PER_IP_HOUR` or `DEMO_RUNS_PER_DAY`, `400` for a bad body (which doesn't spend a run).
+- `GET /v1/demo/runs/:runId`: that run's status, verdict, payment (with explorer link) and agent log. Never the org, the raw text or the model's error text: a run whose model call failed reads *The demo AI is offline right now.*
+
+It is mounted on testnet only, never on mainnet, not even with `LAB_ENABLED=true`. Public runs are lab invoices of the public demo org, so its lab, dashboard and approval queue fill up with visitors' runs; the filmed demo org stays clean.
+
+## Early-access sign-ups
+
+The landing page's sign-up card posts `{ email, role: payer | supplier | builder | other, company? }` to `POST /v1/signups`. Emails are stored trimmed and lower-cased, once each; a new and a repeated email get the same `201`, and nothing lists them over the API. Count them on the server:
+
+```bash
+pnpm --filter @bound/server signups:count   # total and per role, never an email
+```
 
 ## Demo script
 
