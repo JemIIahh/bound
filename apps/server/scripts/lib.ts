@@ -1,9 +1,10 @@
-// Shared helpers for the demo scripts (deploy, seed, lookalike, rehearsal). TESTNET ONLY.
+// Shared helpers for the demo scripts (deploy, seed, lookalike, rehearsal, public demo org). TESTNET ONLY.
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { config as loadDotenv, parse as parseDotenv } from 'dotenv'
-import { Abis } from 'viem/tempo'
+import { createClient, http, publicActions, walletActions, type Address, type Hex } from 'viem'
+import { Abis, Account } from 'viem/tempo'
 import { getNetwork, publicClientFor } from '@bound/core'
 
 export const SERVER_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -115,4 +116,50 @@ export async function ensureFunded(pub: Pub, who: `0x${string}`, label: string, 
     await sleep(2000)
   }
   die(`could not fund ${label} ${who} from the testnet faucet`)
+}
+
+// ---- demo orgs through a running server (rehearse --fresh-org, demo:public-org) ----
+
+/** The seeded demo org's limits: 50 USD per day, the most the server's demo signer accepts. */
+export const DEMO_LIMIT_USD = '50'
+export const DEMO_PERIOD_SECONDS = 86_400
+
+/** JSON calls to a running Bound server; any non-2xx throws with the status and body. */
+export function boundApi(base: string) {
+  return async (method: string, path: string, body?: unknown, token?: string): Promise<any> => {
+    const res = await fetch(`${base}${path}`, {
+      method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+    const json: any = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(`${method} ${path} → ${res.status} ${JSON.stringify(json)}`)
+    return json
+  }
+}
+export type BoundApi = ReturnType<typeof boundApi>
+
+/** DEMO_ROOT_PRIVATE_KEY as a testnet wallet client (demo only: it stands in for a customer's root wallet). Check it with assertTestnetChain before sending. */
+export function demoRootClient(net: ReturnType<typeof getNetwork>, rootKey = needKey('DEMO_ROOT_PRIVATE_KEY')) {
+  return createClient({ account: Account.fromSecp256k1(rootKey), chain: net.chain, transport: http(net.rpc) }).extend(publicActions).extend(walletActions)
+}
+export type DemoRootClient = ReturnType<typeof demoRootClient>
+
+/** Signs a prepared call with the demo root (demo only: in the product the customer's wallet signs). */
+export async function signAsRoot(root: DemoRootClient, call: { to: Address; data: Hex }): Promise<Hex> {
+  const r: any = await root.sendTransactionSync({ ...call, throwOnReceiptRevert: true } as any)
+  return r.transactionHash as Hex
+}
+
+/**
+ * Creates an org through the server's API with the demo root as its root account and the seeded demo org's
+ * limits, then authorizes its agent key: the demo root signs the prepared authorizeCall and the server
+ * confirms it. The new key's allowlist holds only the root sentinel, as for every new org. The token is
+ * returned for the caller to store; never print it.
+ */
+export async function createAuthorizedDemoOrg(api: BoundApi, root: DemoRootClient, name: string) {
+  await assertTestnetChain(root)
+  const created = await api('POST', '/v1/orgs', { name, rootAddress: root.account.address, limitUsd: DEMO_LIMIT_USD, periodSeconds: DEMO_PERIOD_SECONDS })
+  const authTx = await signAsRoot(root, created.authorizeCall)
+  await api('POST', `/v1/orgs/${created.org.id}/authorized`, { txHash: authTx }, created.token)
+  return { orgId: created.org.id as string, token: created.token as string, authTx }
 }

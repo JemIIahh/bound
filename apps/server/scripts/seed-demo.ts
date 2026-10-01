@@ -11,7 +11,7 @@ import { getAddress, keccak256, stringToHex, zeroAddress, type Address } from 'v
 import { privateKeyToAddress } from 'viem/accounts'
 import { eq } from 'drizzle-orm'
 import { addressUrl, boundRegistryAbi, normalizeDomain, readPayee, txUrl } from '@bound/core'
-import { assertTestnetChain, die, ensureFunded, needKey, requireTestnet, SERVER_ENV, setEnv, writeWebEnv } from './lib'
+import { assertTestnetChain, DEMO_LIMIT_USD, DEMO_PERIOD_SECONDS, die, ensureFunded, needKey, requireTestnet, SERVER_ENV, setEnv, writeWebEnv } from './lib'
 
 const { pub } = requireTestnet()
 await assertTestnetChain(pub)
@@ -60,8 +60,8 @@ setEnv(SERVER_ENV, { DEMO_PAYEE_NAME: PAYEE_NAME, DEMO_PAYEE_ADDRESS: payee, DEM
 await ensureFunded(pub, demoRoot, 'demo root')
 
 // 3. demo org via the server's services
-const LIMIT_USD = '50' // the server-side demo signer refuses anything above 50 USD per period
-const PERIOD_SECONDS = 86_400
+const LIMIT_USD = DEMO_LIMIT_USD // the server-side demo signer refuses anything above 50 USD per period
+const PERIOD_SECONDS = DEMO_PERIOD_SECONDS
 let orgId = process.env.DEMO_ORG_ID
 let token = process.env.DEMO_ORG_TOKEN
 const existing = orgId ? db.select().from(orgs).where(eq(orgs.id, orgId)).get() : undefined
