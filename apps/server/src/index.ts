@@ -10,6 +10,7 @@ import { orgsRouter } from './routes/orgs'
 import { invoicesRouter } from './routes/invoices'
 import { mountLab } from './routes/lab'
 import { mountDemo } from './routes/demo'
+import { signupsRouter } from './routes/signups'
 import { mountMcp } from './mcp'
 
 const config = loadConfig()
@@ -25,6 +26,7 @@ app.use('/v1', payeesRouter(base))
 app.use('/v1', verifyRouter(deps))
 app.use('/v1', orgsRouter(deps))
 app.use('/v1', invoicesRouter(deps))
+app.use('/v1', signupsRouter(deps))
 if (!mountLab(app, deps)) console.log('attack lab disabled (mainnet without LAB_ENABLED=true)')
 if (!mountDemo(app, deps)) console.log('public demo disabled (testnet only)')
 mountMcp(app, deps) // public, read-only: verify_payee + lookup_payee only

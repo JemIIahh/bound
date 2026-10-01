@@ -124,3 +124,11 @@ export const demoRuns = sqliteTable('demo_runs', {
   guardOff: integer('guard_off').notNull(),
   createdAt: integer('created_at').notNull(),
 })
+
+/** Early-access sign-ups (POST /v1/signups). Never listed by the API. */
+export const signups = sqliteTable('signups', {
+  email: text('email').primaryKey(),               // trimmed, lower-cased
+  role: text('role').notNull(),                    // payer | supplier | builder | other
+  company: text('company'),
+  createdAt: integer('created_at').notNull(),
+})

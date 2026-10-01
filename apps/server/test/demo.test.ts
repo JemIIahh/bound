@@ -210,9 +210,9 @@ describe('GET /v1/demo/runs/:runId', () => {
 describe('demo config', () => {
   const env = { BOUND_REGISTRY_ADDRESS: '0x00', ATTESTER_PRIVATE_KEY: '0x01', SERVER_SECRET: '0x' + '11'.repeat(32) }
   test('limits default to 5 per IP per hour and 300 per day; empty values keep the defaults', () => {
-    expect(loadConfig(env)).toMatchObject({ demoRunsPerIpHour: 5, demoRunsPerDay: 300 })
+    expect(loadConfig(env)).toMatchObject({ demoRunsPerIpHour: 5, demoRunsPerDay: 300, signupsPerIpHour: 10 })
     expect(loadConfig({ ...env, DEMO_RUNS_PER_IP_HOUR: '', DEMO_RUNS_PER_DAY: '' })).toMatchObject({ demoRunsPerIpHour: 5, demoRunsPerDay: 300 })
-    expect(loadConfig({ ...env, DEMO_RUNS_PER_IP_HOUR: '2', DEMO_RUNS_PER_DAY: '0' })).toMatchObject({ demoRunsPerIpHour: 2, demoRunsPerDay: 0 })
+    expect(loadConfig({ ...env, DEMO_RUNS_PER_IP_HOUR: '2', DEMO_RUNS_PER_DAY: '0', SIGNUPS_PER_IP_HOUR: '3' })).toMatchObject({ demoRunsPerIpHour: 2, demoRunsPerDay: 0, signupsPerIpHour: 3 })
     expect(() => loadConfig({ ...env, DEMO_RUNS_PER_IP_HOUR: '0' })).toThrow()
     expect(() => loadConfig({ ...env, DEMO_RUNS_PER_DAY: 'lots' })).toThrow()
   })

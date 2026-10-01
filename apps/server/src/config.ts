@@ -22,6 +22,8 @@ const schema = z.object({
   // Public demo (/v1/demo, testnet only): runs per client IP per hour, and runs per rolling day for everyone (0 pauses it).
   DEMO_RUNS_PER_IP_HOUR: intEnv(5, 1),
   DEMO_RUNS_PER_DAY: intEnv(300),
+  // Early-access sign-ups (POST /v1/signups) per client IP per hour.
+  SIGNUPS_PER_IP_HOUR: intEnv(10, 1),
 })
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
@@ -41,6 +43,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     labEnabled: e.LAB_ENABLED,
     demoRunsPerIpHour: e.DEMO_RUNS_PER_IP_HOUR,
     demoRunsPerDay: e.DEMO_RUNS_PER_DAY,
+    signupsPerIpHour: e.SIGNUPS_PER_IP_HOUR,
   }
 }
 export type Config = ReturnType<typeof loadConfig>
