@@ -37,6 +37,18 @@ describe('runAgent', () => {
     expect(params.messages[0].content[0].text).toContain('<invoice>\nInvoice INV-1 Acme Ltd\n</invoice>')
   })
 
+  test('through a gateway (ANTHROPIC_BASE_URL) it uses the configured model and drops Anthropic-only options', async () => {
+    const { deps } = setup()
+    deps.config = { anthropicKey: 'k', anthropicBaseUrl: 'https://router-api.0g.ai', agentModel: 'claude-opus-5' }
+    const client = fakeClient(async function* () { yield msg([{ type: 'text', text: 'done' }]) })
+    await runAgent(deps, 'inv1', { mode: 'guarded' }, client as any)
+    const params = client.beta.messages.toolRunner.mock.calls[0]![0]
+    expect(params).toMatchObject({ model: 'claude-opus-5', max_tokens: 16000, system: GUARDED_SYSTEM })
+    expect(params.output_config).toBeUndefined()
+    expect(params.betas).toBeUndefined()
+    expect(params.fallbacks).toBeUndefined()
+  })
+
   test('logs tool calls, tool results and text in order', async () => {
     const { deps, db } = setup()
     const client = fakeClient(async function* (params) {

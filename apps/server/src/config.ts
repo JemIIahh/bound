@@ -11,6 +11,10 @@ const schema = z.object({
   ATTESTER_PRIVATE_KEY: hex,
   SERVER_SECRET: hex.refine((s) => s.length === 66, 'SERVER_SECRET must be 32 bytes hex'),
   ANTHROPIC_API_KEY: z.string().default(''),
+  // Optional Anthropic-compatible gateway for the agent (e.g. 0G Compute's router, https://router-api.0g.ai) and
+  // the model id it serves; empty = Anthropic's API and the default model.
+  ANTHROPIC_BASE_URL: z.string().optional().transform((v) => (v?.trim() ? v.trim().replace(/\/+$/, '') : undefined)),
+  AGENT_MODEL: z.string().optional().transform((v) => (v?.trim() ? v.trim() : undefined)),
   DATABASE_PATH: z.string().default('./bound.db'),
   PORT: z.coerce.number().default(8787),
   WEB_ORIGIN: z.string().default('http://localhost:3000'),
@@ -37,6 +41,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     attesterKey: e.ATTESTER_PRIVATE_KEY as `0x${string}`,
     serverSecret: e.SERVER_SECRET as `0x${string}`,
     anthropicKey: e.ANTHROPIC_API_KEY,
+    anthropicBaseUrl: e.ANTHROPIC_BASE_URL,
+    agentModel: e.AGENT_MODEL,
     databasePath: e.DATABASE_PATH,
     port: e.PORT,
     webOrigin: e.WEB_ORIGIN,

@@ -73,7 +73,7 @@ pnpm --filter @bound/server demo:lookalike  # mines the lab's lookalike wallet (
 
 `demo:seed` prints the demo org id and org token (a demo credential for the dashboard) and writes both to `apps/server/.env`. Set `DEMO_PAYEE_DOMAIN=yourdomain.com` before seeding to attest a real domain instead of `acme.example`. Re-running it updates the entry in place. The scripts also write `apps/web/.env.local` (git-ignored, public values only).
 
-Then add `ANTHROPIC_API_KEY` to `apps/server/.env` (the agent reads invoices with it) and run:
+Then add `ANTHROPIC_API_KEY` to `apps/server/.env` (the agent reads invoices with it; to reach Claude through an Anthropic-compatible gateway such as 0G Compute's router, also set `ANTHROPIC_BASE_URL=https://router-api.0g.ai` and `AGENT_MODEL=claude-opus-5`, with the gateway's key as `ANTHROPIC_API_KEY`) and run:
 
 ```bash
 pnpm dev:server                                   # http://localhost:8787

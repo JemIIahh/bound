@@ -5,6 +5,8 @@ import type { ServiceDeps } from '../services/payments'
 import { GUARDED_SYSTEM, GUARD_OFF_SYSTEM } from './prompts'
 import { buildTools, type AgentMode } from './tools'
 
+const DEFAULT_MODEL = 'claude-opus-5-5'
+
 export type AgentLogEntry = { at: number; kind: 'tool_call' | 'tool_result' | 'text'; name?: string; data: unknown }
 
 /** base64 of "%PDF-": every stored PDF starts with it. */
@@ -58,13 +60,13 @@ export async function runAgent(deps: ServiceDeps, invoiceId: string, opts: { mod
 
   let ended: 'refusal' | 'error' | null = null
   try {
-    const c = client ?? new Anthropic({ apiKey: deps.config.anthropicKey || undefined })
+    const c = client ?? new Anthropic({ apiKey: deps.config.anthropicKey || undefined, baseURL: deps.config.anthropicBaseUrl })
+    // effort and server-side fallback are Anthropic API features; a gateway (ANTHROPIC_BASE_URL) may reject them
+    const native = !deps.config.anthropicBaseUrl
     const runner = c.beta.messages.toolRunner({
-      model: 'claude-opus-5-5',
+      model: deps.config.agentModel || DEFAULT_MODEL,
       max_tokens: 16000,
-      output_config: { effort: 'low' },
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
+      ...(native ? { output_config: { effort: 'low' as const }, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const } : {}),
       system: opts.mode === 'guarded' ? GUARDED_SYSTEM : GUARD_OFF_SYSTEM,
       tools: buildTools(deps, invoiceId, opts.mode, (name, result) => push({ kind: 'tool_result', name, data: result })),
       messages: [{ role: 'user', content: invoiceContent(inv.raw) }],
