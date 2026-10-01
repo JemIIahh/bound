@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { network } from '@/lib/chain'
 import { ArrowIcon, Avatar, CardFoot, LockIcon, Pill } from '@/components/atoms'
 import { BlockedStamp } from '@/components/BlockedStamp'
+import { EarlyAccess } from '@/components/EarlyAccess'
 import { card, invCard, roundBtn, wrap } from '@/components/ui'
 
 const ctaLg =
@@ -224,6 +225,10 @@ export default function Home() {
             </Link>
           </div>
         </div>
+      </section>
+
+      <section className={`${wrap} mt-4 sm:mt-6`} aria-labelledby="early-access">
+        <EarlyAccess />
       </section>
     </main>
   )
