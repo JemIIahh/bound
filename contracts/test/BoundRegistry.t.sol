@@ -186,4 +186,50 @@ contract BoundRegistryTest is Test {
         vm.stopPrank();
         assertEq(reg.getPayee(acme2).activeFrom, 1_800_000_000 + 72 hours);
     }
+
+    function _dh(string memory d) internal pure returns (bytes32) {
+        return keccak256(bytes(d));
+    }
+
+    function test_supersede_to_different_domain_clears_old_domain() public {
+        _attestAcme();
+        vm.prank(attester);
+        reg.supersede(acme, acme2, "Acme Ltd", "acme.io", "", bytes4(0), 1, bytes32(0));
+        assertEq(reg.currentWalletForDomain(_dh("acme.com")), address(0));
+        assertEq(reg.currentWalletForDomain(_dh("acme.io")), acme2);
+    }
+
+    function test_supersede_same_domain_moves_mapping_to_new_wallet() public {
+        _attestAcme();
+        vm.prank(attester);
+        reg.supersede(acme, acme2, "Acme Ltd", "acme.com", "", bytes4(0), 1, bytes32(0));
+        assertEq(reg.currentWalletForDomain(_dh("acme.com")), acme2);
+    }
+
+    function test_old_domain_free_for_another_wallet_after_supersede() public {
+        _attestAcme();
+        vm.startPrank(attester);
+        reg.supersede(acme, acme2, "Acme Ltd", "acme.io", "", bytes4(0), 1, bytes32(0));
+        reg.attest(address(0xC0DE), "Acme Holdings", "acme.com", "", bytes4(0), 1, bytes32(0));
+        vm.stopPrank();
+        assertEq(reg.currentWalletForDomain(_dh("acme.com")), address(0xC0DE));
+    }
+
+    function test_supersede_does_not_clobber_mapping_held_by_other_wallet() public {
+        _attestAcme();
+        vm.startPrank(attester);
+        reg.supersede(acme, acme2, "Acme Ltd", "acme.io", "", bytes4(0), 1, bytes32(0));
+        reg.attest(address(0xC0DE), "Acme Holdings", "acme.com", "", bytes4(0), 1, bytes32(0));
+        // revoking the superseded wallet must not touch the new holder of acme.com
+        reg.revoke(acme, "cleanup");
+        vm.stopPrank();
+        assertEq(reg.currentWalletForDomain(_dh("acme.com")), address(0xC0DE));
+    }
+
+    function test_supersede_different_domain_only_attester() public {
+        _attestAcme();
+        vm.expectRevert(BoundRegistry.NotAttester.selector);
+        reg.supersede(acme, acme2, "Acme Ltd", "acme.io", "", bytes4(0), 1, bytes32(0));
+        assertEq(reg.currentWalletForDomain(_dh("acme.com")), acme);
+    }
 }

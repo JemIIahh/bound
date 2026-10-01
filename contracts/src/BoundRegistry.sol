@@ -79,6 +79,8 @@ contract BoundRegistry {
         uint64 activeFrom = uint64(block.timestamp) + COOLING_OFF;
         old.supersededAt = uint64(block.timestamp);
         old.successor = newWallet;
+        // release the old domain if still held by oldWallet; a same-domain supersede is re-mapped to newWallet by _write
+        _clearDomain(old.domain, oldWallet);
         _write(newWallet, legalName, domain, lei, masterId, level, evidenceHash, activeFrom);
         emit PayeeSuperseded(oldWallet, newWallet, activeFrom);
     }
