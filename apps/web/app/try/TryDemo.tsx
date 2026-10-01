@@ -19,9 +19,9 @@ type Notice = { tone: 'amber' | 'grey'; title: string; text: string; /** no run 
 function noticeFor(code: string | undefined, status: number, message: string): Notice {
   if (code === 'busy') return { tone: 'amber', title: 'Busy day', text: message, blocking: true }
   if (status === 429) return { tone: 'amber', title: 'That’s the limit for now', text: message, blocking: false }
-  if (code === 'offline') return { tone: 'grey', title: 'Demo offline', text: `${message} Try again in a little while.`, blocking: true }
-  if (code === 'unavailable') return { tone: 'grey', title: 'Demo not available', text: message, blocking: true }
-  if (status === 404) return { tone: 'grey', title: 'Demo not available', text: 'The public demo only runs on Tempo testnet.', blocking: true }
+  // no agent key, no public demo org, or a server that doesn't serve the demo: the same calm offline state
+  if (code === 'offline' || code === 'unavailable') return { tone: 'grey', title: 'Demo offline', text: `${message} Try again in a little while.`, blocking: true }
+  if (status === 404) return { tone: 'grey', title: 'Demo offline', text: 'The public demo only runs on Tempo testnet.', blocking: true }
   if (status === 0) return { tone: 'grey', title: 'Can’t reach the demo', text: 'The demo server isn’t answering. Try again in a little while.', blocking: false }
   return { tone: 'grey', title: 'Something went wrong', text: message, blocking: false }
 }
@@ -34,7 +34,8 @@ export function TryDemo() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
-  const [limits, setLimits] = useState({ runsPerHour: 5, maxChars: 4000 })
+  // the server's values replace these once GET /v1/demo answers
+  const [limits, setLimits] = useState({ runsPerHour: 6, maxChars: 4000 })
   const [run, setRun] = useState<Run | null>(null)
   const resultRef = useRef<HTMLDivElement>(null)
 

@@ -61,6 +61,7 @@ const STEPS: Step[] = [
 ]
 
 const START_LINKS = [
+  { href: '/try', label: 'Try the attack' },
   { href: '/app', label: 'I pay suppliers' },
   { href: '/payee', label: "I'm a supplier" },
   { href: '/verify', label: 'Check a wallet' },
