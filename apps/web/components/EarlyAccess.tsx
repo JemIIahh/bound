@@ -50,7 +50,7 @@ export function EarlyAccess() {
           </span>
           <div className="min-w-0">
             <p className="text-[17px] font-semibold text-fg">You&apos;re on the list.</p>
-            <p className="mt-0.5 text-[14.5px] text-fg2 [overflow-wrap:anywhere]">We&apos;ll write to {email.trim()} when Bound goes live.</p>
+            <p className="mt-0.5 text-[14.5px] text-fg2">We&apos;ll email you when Bound goes live.</p>
           </div>
         </div>
       ) : (
