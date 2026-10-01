@@ -19,8 +19,10 @@ const schema = z.object({
   DEMO_ORG_ID: z.string().optional().transform((v) => (v?.trim() ? v.trim() : undefined)),
   // Attack lab (guard-off demo). Always on for testnet; on mainnet only when explicitly enabled.
   LAB_ENABLED: z.enum(['true', 'false', '']).optional().transform((v) => v === 'true'),
-  // Public demo (/v1/demo, testnet only): runs per client IP per hour, and runs per rolling day for everyone (0 pauses it).
-  DEMO_RUNS_PER_IP_HOUR: intEnv(5, 1),
+  // Public demo (/v1/demo, testnet only): the org it runs on, never the filmed DEMO_ORG_ID (demo:public-org
+  // creates one); runs per client IP per hour, and runs per rolling day for everyone (0 pauses it).
+  DEMO_PUBLIC_ORG_ID: z.string().optional().transform((v) => (v?.trim() ? v.trim() : undefined)),
+  DEMO_RUNS_PER_IP_HOUR: intEnv(6, 1),
   DEMO_RUNS_PER_DAY: intEnv(300),
   // Early-access sign-ups (POST /v1/signups) per client IP per hour.
   SIGNUPS_PER_IP_HOUR: intEnv(10, 1),
@@ -41,6 +43,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     demoRootKey: e.DEMO_ROOT_PRIVATE_KEY,
     demoOrgId: e.DEMO_ORG_ID,
     labEnabled: e.LAB_ENABLED,
+    demoPublicOrgId: e.DEMO_PUBLIC_ORG_ID,
     demoRunsPerIpHour: e.DEMO_RUNS_PER_IP_HOUR,
     demoRunsPerDay: e.DEMO_RUNS_PER_DAY,
     signupsPerIpHour: e.SIGNUPS_PER_IP_HOUR,

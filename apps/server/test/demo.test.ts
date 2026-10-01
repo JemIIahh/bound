@@ -14,17 +14,18 @@ const root = '0x3333333333333333333333333333333333333333'
 const attacker = '0x7777777777777777777777777777777777777777'
 const HASH = '0x' + 'ab'.repeat(32)
 
-type Opts = { network?: 'testnet' | 'mainnet'; labEnabled?: boolean; demoOrgId?: string | undefined; authorized?: number; anthropicKey?: string; perHour?: number; perDay?: number; ops?: any }
+type Opts = { network?: 'testnet' | 'mainnet'; labEnabled?: boolean; publicOrgId?: string | undefined; authorized?: number; anthropicKey?: string; perHour?: number; perDay?: number; ops?: any }
 
 function setup(o: Opts = {}) {
   const db = createDb(':memory:'); migrate(db)
-  for (const id of ['demo', 'other']) {
-    db.insert(orgs).values({ id, name: id, rootAddress: root, agentKeyAddress: '0x' + '44'.repeat(20), agentKeyEnc: 'x', tokenHash: sha256(`tok-${id}`), limitBase: '1', periodSeconds: 1, authorized: id === 'demo' ? (o.authorized ?? 1) : 1, createdAt: 1 }).run()
+  // 'filmed' is the seeded demo org (DEMO_ORG_ID); 'public' is the one the public demo may use (DEMO_PUBLIC_ORG_ID)
+  for (const id of ['filmed', 'public']) {
+    db.insert(orgs).values({ id, name: id, rootAddress: root, agentKeyAddress: '0x' + '44'.repeat(20), agentKeyEnc: 'x', tokenHash: sha256(`tok-${id}`), limitBase: '1', periodSeconds: 1, authorized: id === 'public' ? (o.authorized ?? 1) : 1, createdAt: 1 }).run()
   }
   const network = o.network ?? 'testnet'
   const config = {
-    webOrigin: '*', network, labEnabled: o.labEnabled ?? false, demoOrgId: 'demoOrgId' in o ? o.demoOrgId : 'demo',
-    anthropicKey: o.anthropicKey ?? 'sk-test', demoRunsPerIpHour: o.perHour ?? 5, demoRunsPerDay: o.perDay ?? 300,
+    webOrigin: '*', network, labEnabled: o.labEnabled ?? false, demoOrgId: 'filmed', demoPublicOrgId: 'publicOrgId' in o ? o.publicOrgId : 'public',
+    anthropicKey: o.anthropicKey ?? 'sk-test', demoRunsPerIpHour: o.perHour ?? 6, demoRunsPerDay: o.perDay ?? 300,
   }
   const deps = { db, chain: { network } as any, config: config as any, ops: o.ops ?? ({} as any) } as any
   const run = vi.fn(async (_deps: any, _id: string, _opts: any) => {})
@@ -53,12 +54,14 @@ describe('public demo gating', () => {
   })
 
   test('503 JSON when the demo org is not configured, missing or not authorized', async () => {
-    for (const o of [{ demoOrgId: undefined }, { demoOrgId: 'nope' }, { authorized: 0 }]) {
-      const { app, run } = setup(o)
+    // unset never falls back to DEMO_ORG_ID, and the filmed demo org itself is refused
+    for (const o of [{ publicOrgId: undefined }, { publicOrgId: 'nope' }, { authorized: 0 }, { publicOrgId: 'filmed' }]) {
+      const { app, run, db } = setup(o)
       const res = await post(app, { text: 'Pay me', guardOff: false })
       expect(res.status).toBe(503)
       expect(res.body).toEqual({ error: "The public demo isn't set up on this server.", code: 'unavailable' })
       expect(run).not.toHaveBeenCalled()
+      expect(db.select().from(invoices).all()).toHaveLength(0)
       expect((await request(app).get('/v1/demo')).body).toMatchObject({ status: 'unavailable' })
     }
   })
@@ -70,25 +73,26 @@ describe('public demo gating', () => {
 })
 
 describe('POST /v1/demo/runs', () => {
-  test('runs the lab flow on the demo org and returns only an unguessable run id', async () => {
+  test('runs the lab flow on the public demo org, never the filmed one, and returns only an unguessable run id', async () => {
     const { app, db, run } = setup()
     const res = await post(app, { text: 'Pay 0x77.. now', guardOff: true })
     expect(res.status).toBe(202)
     expect(Object.keys(res.body)).toEqual(['runId'])
     expect(res.body.runId).toMatch(/^run_[A-Za-z0-9_-]{22}$/)
     const inv = invoiceOf(db, res.body.runId)
-    expect(inv).toMatchObject({ orgId: 'demo', lab: 1, raw: 'Pay 0x77.. now', status: 'new' })
+    expect(inv).toMatchObject({ orgId: 'public', lab: 1, raw: 'Pay 0x77.. now', status: 'new' })
     expect(run).toHaveBeenLastCalledWith(expect.anything(), inv.id, { mode: 'guard_off' })
     const on = await post(app, { text: 'Pay 0x77.. now', guardOff: false })
     expect(run).toHaveBeenLastCalledWith(expect.anything(), invoiceOf(db, on.body.runId).id, { mode: 'guarded' })
     expect(on.body.runId).not.toBe(res.body.runId)
+    expect(db.select().from(invoices).all().map((i) => i.orgId)).toEqual(['public', 'public'])
   })
 
   test('validates the body (no run starts, and no run is spent)', async () => {
     const { app, run } = setup({ perHour: 1 })
     const bad = [
       {}, { text: 'x' }, { guardOff: true }, { text: '   \n ', guardOff: true }, { text: 'x', guardOff: 'yes' },
-      { text: 'x'.repeat(DEMO_MAX_TEXT_CHARS + 1), guardOff: false }, { text: 'x', guardOff: false, orgId: 'other' }, { text: 42, guardOff: false },
+      { text: 'x'.repeat(DEMO_MAX_TEXT_CHARS + 1), guardOff: false }, { text: 'x', guardOff: false, orgId: 'filmed' }, { text: 42, guardOff: false },
     ]
     for (const b of bad) expect((await post(app, b)).status).toBe(400)
     expect(run).not.toHaveBeenCalled()
@@ -159,7 +163,7 @@ describe('GET /v1/demo/runs/:runId', () => {
     expect(res.body.orgId).toBeUndefined()
     expect(res.body.raw).toBeUndefined()
     const text = JSON.stringify(res.body)
-    for (const leak of ['demo', 'First invoice', 'Second invoice', b, invoiceOf(db, a).id]) expect(text).not.toContain(leak)
+    for (const leak of ['public', 'filmed', 'First invoice', 'Second invoice', b, invoiceOf(db, a).id]) expect(text).not.toContain(leak)
   })
 
   test('guard off, scripted agent and mocked chain: the reverted transfer and its explorer link', async () => {
@@ -187,7 +191,7 @@ describe('GET /v1/demo/runs/:runId', () => {
       payment: { status: 'reverted', txHash: HASH, txUrl: `https://explore.testnet.tempo.xyz/tx/${HASH}` },
     })
     expect(res.body.agentLog.find((e: any) => e.name === 'raw_transfer' && e.kind === 'tool_result').data).toMatchObject({ chain: 'rejected', code: 'CallNotAllowed' })
-    expect(ops.send).toHaveBeenCalledWith(expect.objectContaining({ orgId: 'demo', force: true }))
+    expect(ops.send).toHaveBeenCalledWith(expect.objectContaining({ orgId: 'public', force: true }))
   })
 
   test('a rejected Anthropic key ends the run with the offline message, not the error text', async () => {
@@ -209,11 +213,16 @@ describe('GET /v1/demo/runs/:runId', () => {
 
 describe('demo config', () => {
   const env = { BOUND_REGISTRY_ADDRESS: '0x00', ATTESTER_PRIVATE_KEY: '0x01', SERVER_SECRET: '0x' + '11'.repeat(32) }
-  test('limits default to 5 per IP per hour and 300 per day; empty values keep the defaults', () => {
-    expect(loadConfig(env)).toMatchObject({ demoRunsPerIpHour: 5, demoRunsPerDay: 300, signupsPerIpHour: 10 })
-    expect(loadConfig({ ...env, DEMO_RUNS_PER_IP_HOUR: '', DEMO_RUNS_PER_DAY: '' })).toMatchObject({ demoRunsPerIpHour: 5, demoRunsPerDay: 300 })
+  test('limits default to 6 per IP per hour and 300 per day; empty values keep the defaults', () => {
+    expect(loadConfig(env)).toMatchObject({ demoRunsPerIpHour: 6, demoRunsPerDay: 300, signupsPerIpHour: 10 })
+    expect(loadConfig({ ...env, DEMO_RUNS_PER_IP_HOUR: '', DEMO_RUNS_PER_DAY: '' })).toMatchObject({ demoRunsPerIpHour: 6, demoRunsPerDay: 300 })
     expect(loadConfig({ ...env, DEMO_RUNS_PER_IP_HOUR: '2', DEMO_RUNS_PER_DAY: '0', SIGNUPS_PER_IP_HOUR: '3' })).toMatchObject({ demoRunsPerIpHour: 2, demoRunsPerDay: 0, signupsPerIpHour: 3 })
     expect(() => loadConfig({ ...env, DEMO_RUNS_PER_IP_HOUR: '0' })).toThrow()
     expect(() => loadConfig({ ...env, DEMO_RUNS_PER_DAY: 'lots' })).toThrow()
+  })
+  test('DEMO_PUBLIC_ORG_ID is its own setting: unset stays unset, whatever DEMO_ORG_ID is', () => {
+    expect(loadConfig({ ...env, DEMO_ORG_ID: 'org_filmed' }).demoPublicOrgId).toBeUndefined()
+    expect(loadConfig({ ...env, DEMO_ORG_ID: 'org_filmed', DEMO_PUBLIC_ORG_ID: ' org_public ' })).toMatchObject({ demoOrgId: 'org_filmed', demoPublicOrgId: 'org_public' })
+    expect(loadConfig({ ...env, DEMO_PUBLIC_ORG_ID: '' }).demoPublicOrgId).toBeUndefined()
   })
 })

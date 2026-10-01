@@ -33,10 +33,13 @@ export const demoAllowed = (config: Pick<Config, 'network' | 'labEnabled'>) => l
 
 type Status = { status: 'ready' | 'unavailable' | 'offline' | 'busy'; message: string | null }
 
-/** Whether a run could start now: the demo org is configured and authorized, the agent has a key, and the daily cap has room. */
+/**
+ * Whether a run could start now: the public demo org (DEMO_PUBLIC_ORG_ID, never the filmed DEMO_ORG_ID)
+ * is configured and authorized, the agent has a key, and the daily cap has room.
+ */
 function demoStatus(deps: ServiceDeps): Status & { orgId?: string } {
-  const id = deps.config.demoOrgId
-  const org = id ? deps.db.select().from(orgs).where(eq(orgs.id, id)).get() : undefined
+  const { demoPublicOrgId: id, demoOrgId } = deps.config
+  const org = id && id !== demoOrgId ? deps.db.select().from(orgs).where(eq(orgs.id, id)).get() : undefined
   if (!org?.authorized) return { status: 'unavailable', message: DEMO_UNAVAILABLE }
   if (!deps.config.anthropicKey) return { status: 'offline', message: DEMO_OFFLINE }
   const since = nowSeconds() - DAY_SECONDS
@@ -67,7 +70,7 @@ export type DemoLimits = { flood?: RequestHandler; perIp?: RequestHandler }
 
 /**
  * Public attack lab, no wallet or org token: runs the lab flow (createLabInvoice + startAgent) on the
- * seeded demo org (DEMO_ORG_ID), whose credentials never leave the server. Abuse limits: a per-IP request
+ * public demo org (DEMO_PUBLIC_ORG_ID), whose credentials never leave the server. Abuse limits: a per-IP request
  * flood guard, DEMO_RUNS_PER_IP_HOUR runs per IP, DEMO_RUNS_PER_DAY runs per rolling day for everyone,
  * and a short invoice. Poll a run with GET /v1/demo/runs/:runId.
  */
