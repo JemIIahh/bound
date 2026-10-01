@@ -161,7 +161,7 @@ export default function Home() {
                 still didn&apos;t go through — because on Tempo, the AI can only pay suppliers you approved.
               </p>
               <div className="mt-8 flex flex-wrap items-center gap-4 sm:mt-10">
-                <Link href="/app" className={ctaLg}>
+                <Link href="/try" className={ctaLg}>
                   Try to make our AI pay a stranger <span aria-hidden="true">→</span>
                 </Link>
               </div>
@@ -219,7 +219,7 @@ export default function Home() {
           </h2>
           <div className="min-[1100px]:justify-self-end min-[1100px]:text-right">
             <p className="mb-4 text-[17px] text-fg2 sm:mb-6">Write the scam email yourself. Watch it fail.</p>
-            <Link href="/app" className={ctaLg}>
+            <Link href="/try" className={ctaLg}>
               Try to make our AI pay a stranger <span aria-hidden="true">→</span>
             </Link>
           </div>
