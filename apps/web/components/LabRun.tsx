@@ -217,8 +217,7 @@ function OutcomeView({ out, d, approvalHref }: { out: Outcome; d: RunDetail; app
         <div className="flex flex-col gap-4">
           <BlockedStamp className="my-4 self-center" />
           <p className={body}>
-            The agent sent {amount ?? 'the payment'} to <span className="font-mono text-[13px] text-fg">{(d.payment?.toAddress ?? d.address) && <Addr value={(d.payment?.toAddress ?? d.address)!} />}</span>. The agent
-            key isn&apos;t allowed to pay that wallet, so the transaction reverted onchain{out.code ? ` (${out.code})` : ''}. No money moved.
+            The agent sent {amount ?? 'the payment'} to <span className="font-mono text-[13px] text-fg">{(d.payment?.toAddress ?? d.address) && <Addr value={(d.payment?.toAddress ?? d.address)!} />}</span>. The agent&apos;s payment key isn&apos;t allowed to pay that wallet, so Tempo rejected the transaction{out.code ? ` (${out.code})` : ''}. No money moved.
           </p>
           {explorerLink(out.url, 'View the reverted transaction')}
         </div>
@@ -282,7 +281,7 @@ function OutcomeView({ out, d, approvalHref }: { out: Outcome; d: RunDetail; app
             <Badge tone="amber">Needs approval</Badge>
           </div>
           <p className={`mt-2 ${headline}`}>{to} checks out, but you haven&apos;t approved it yet.</p>
-          <p className={body}>Approve it on the dashboard with your root wallet, and the agent pays.</p>
+          <p className={body}>Approve it on the dashboard with your company wallet, and the agent pays.</p>
           <Link href={approvalHref} className={`${ghostBtn} mt-2 sm:w-auto sm:self-start`}>
             Review the approval →
           </Link>

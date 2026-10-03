@@ -64,7 +64,7 @@ function describe(e: OrgEvent, payee: string | undefined): string {
       return `${label} changed its wallet${next ? ` to ${next}` : ''}. Payments stay on hold until you approve the new one.`
     }
     case 'approved':
-      return `Approved ${str(d.label) ?? to}. Allowlist updated on Tempo`
+      return `Approved ${str(d.label) ?? to}. Approved list updated on Tempo`
     case 'rejected':
       return `Rejected ${str(d.label) ?? to}`
     case 'asked':
@@ -78,7 +78,7 @@ function describe(e: OrgEvent, payee: string | undefined): string {
     case 'currency_unsupported':
       return `Didn't pay ${to}: the invoice is in ${str(d.currency) || 'an unknown currency'}. Bound pays in USD stablecoins only`
     case 'key_unrestricted':
-      return "The agent key has no recipient restriction. Payments are stopped"
+      return "The agent's payment key has no limit on who it can pay. Payments are stopped"
     default:
       return e.kind.replace(/_/g, ' ')
   }

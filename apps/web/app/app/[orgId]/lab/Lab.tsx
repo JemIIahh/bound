@@ -98,9 +98,9 @@ export function Lab({ orgId }: { orgId: string }) {
         <p className="flex flex-wrap gap-x-5 gap-y-1 text-[14px] text-fg3">
           <span>{o.org.name}</span>
           <span>
-            Agent key <span className="font-mono text-[12.5px]">{short(o.org.agentKeyAddress)}</span>
+            Payment key <span className="font-mono text-[12.5px]">{short(o.org.agentKeyAddress)}</span>
           </span>
-          <span>{o.capacity.used} allowlisted</span>
+          <span>{o.capacity.used} approved</span>
           <Link href={`/app/${o.org.id}`} className={link}>
             Dashboard
           </Link>

@@ -70,7 +70,7 @@ export function OrgSetup({ aside }: { aside?: ReactNode }) {
       children: (
         <div className="flex flex-col gap-4">
           <p className="text-[15px] leading-relaxed text-fg2">
-            This wallet becomes your organization&apos;s root account. You&apos;ll sign the agent&apos;s key and every payee approval with it.
+            This is your company wallet. You&apos;ll sign the agent&apos;s payment key and every supplier approval with it.
           </p>
           <ConnectPanel />
         </div>
@@ -85,7 +85,7 @@ export function OrgSetup({ aside }: { aside?: ReactNode }) {
     },
     {
       key: 'authorize',
-      title: "Authorize the agent's key",
+      title: "Authorize the agent's payment key",
       state: state(2),
       children: setup ? (
         <AuthorizeStep
@@ -183,7 +183,7 @@ function DetailsStep({ wallet, onCreated }: { wallet: string; onCreated: (s: Set
         {fields.limitUsd ? (
           <p className={`mt-1.5 ${errorText}`}>{fields.limitUsd}</p>
         ) : (
-          <p className={`mt-1.5 ${hint}`}>The most the agent can spend in a week. Tempo enforces it onchain, whatever the agent is told.</p>
+          <p className={`mt-1.5 ${hint}`}>The most the agent can spend in a week. Tempo enforces it, whatever the agent is told.</p>
         )}
       </div>
       <div className="flex flex-col gap-2">
@@ -234,7 +234,7 @@ function AuthorizeStep({ setup, blocked, onSent, onAuthorized }: { setup: Setup;
         One transaction from your wallet gives the agent its own key. Until you approve a payee, the key can only send money back to your own account.
       </p>
       <div>
-        <Row label="Agent key">{short(setup.agentKeyAddress)}</Row>
+        <Row label="Payment key">{short(setup.agentKeyAddress)}</Row>
         <Row label="Spending limit">{limit ? `${limit} per week` : `${setup.limitUsd} USD per week`}</Row>
         <Row label="Can pay">Only your account, for now</Row>
       </div>

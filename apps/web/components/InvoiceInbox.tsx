@@ -116,7 +116,7 @@ export function InvoiceComposer({ orgId, onSubmitted }: { orgId: string; onSubmi
 export function outcome(inv: OrgInvoice, events: OrgEvent[], payment: Payment | undefined) {
   const own = events.filter((e) => e.invoiceId === inv.id)
   if (inv.status === 'blocked') {
-    if (own.some((e) => e.kind === 'chain_rejected')) return { text: 'Rejected onchain by Tempo.', tx: payment?.txHash ?? own.find((e) => e.txHash)?.txHash }
+    if (own.some((e) => e.kind === 'chain_rejected')) return { text: 'Rejected by Tempo.', tx: payment?.txHash ?? own.find((e) => e.txHash)?.txHash }
     if (own.some((e) => e.kind === 'rejected')) return { text: 'Rejected by you.' }
     const blocked = own.find((e) => e.kind === 'blocked')
     const reason = typeof blocked?.detail?.reason === 'string' ? blocked.detail.reason : undefined
