@@ -1,6 +1,6 @@
 # @bound/sdk
 
-Your AI can't pay a stranger. Bound verifies a payee before stablecoin money moves on Tempo. This SDK wraps the public verify API and re-exports the allowlist helpers used to approve payees.
+Your AI agent can't pay a stranger. Bound verifies a payee before stablecoin money moves on Tempo. This SDK wraps the public verify API and re-exports the allowlist helpers used to approve payees.
 
 Verdicts: `MATCH`, `CLOSE_MATCH`, `NO_MATCH`, `LOOKALIKE`, `CHANGED`, `REVOKED`. Actions: `PAY`, `ASK`, `BLOCK`.
 

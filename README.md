@@ -1,6 +1,6 @@
 # Bound
 
-> **Your AI can't pay a stranger.**
+> **Your AI agent can't pay a stranger.**
 > Confirmation of Payee for stablecoin payments, enforced by Tempo.
 
 Companies are handing accounts payable to AI agents, and stablecoin payments are final. The two oldest payment frauds, the "we changed our bank details" invoice and the lookalike address, now meet an agent that pays in under a second and can be prompt-injected. Bound checks who controls a payment address before money moves: payees prove their domain and wallet once in an onchain registry, and every invoice gets a verdict (MATCH, CLOSE_MATCH, NO_MATCH, LOOKALIKE, CHANGED, REVOKED). On Tempo it goes further than a warning. The company's agent pays through an access key whose recipient allowlist is enforced by the protocol, so approving a payee is an onchain signature by a human, and a payment to anyone else reverts with `CallNotAllowed`, even if the agent was fooled and Bound's own checks were switched off. Bound never custodies funds and never holds a key that can move them outside that allowlist.
@@ -199,4 +199,4 @@ Rehearsed end to end by `demo:rehearse` against the running server:
 4. **Guard off**: in the attack lab, an injected invoice tells the agent to skip verification, and Bound's checks are disabled. The agent tries to pay the attacker. Tempo refuses it onchain (`CallNotAllowed`) and the dashboard shows `chain_rejected` with the reverted transaction.
 5. **Compromised real domain**: the invoice really comes from `billing@acme.example`, but it pays a brand-new unregistered wallet. The verdict is `LOOKALIKE` (`claims_verified_payee`: it claims to be a verified company but pays an unverified address), so it's blocked.
 
-Close: *Your AI can't pay a stranger.*
+Close: *Your AI agent can't pay a stranger.*

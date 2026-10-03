@@ -91,7 +91,7 @@ export function Nav() {
             ))}
           </nav>
           <Link href="/try" onClick={() => setOpen(false)} className={`${primaryBtn} mt-3`}>
-            Try to make our AI pay a stranger <ArrowIcon size={15} />
+            Try to make our AI agent pay a stranger <ArrowIcon size={15} />
           </Link>
           {isConnected && (
             // below sm the wallet pill has no room for its disconnect button, so it lives here

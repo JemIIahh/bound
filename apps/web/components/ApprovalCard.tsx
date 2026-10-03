@@ -169,7 +169,7 @@ export function ApprovalCard({
         </div>
         <h3 className="mt-8 text-2xl font-semibold leading-[1.15] tracking-[-0.025em] [overflow-wrap:anywhere] sm:text-[26px]">{approval.label}</h3>
         <p className="mt-2 text-[15.5px] leading-[1.55] text-fg2">
-          {invoice?.invoiceNo ? `${invoice.invoiceNo} · ` : ''}Your AI assistant wants to pay it.
+          {invoice?.invoiceNo ? `${invoice.invoiceNo} · ` : ''}Your AI agent wants to pay it.
         </p>
         {verdict ? (
           <div className="mt-4">

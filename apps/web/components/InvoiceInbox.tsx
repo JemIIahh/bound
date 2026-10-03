@@ -68,7 +68,7 @@ export function InvoiceComposer({ orgId, onSubmitted }: { orgId: string; onSubmi
           <Pill>New invoice</Pill>
         </div>
         <h2 id="invoices-label" className={`mt-6 ${cardTitle}`}>
-          Send your AI an invoice
+          Send your agent an invoice
         </h2>
         <p className="mt-2 text-[15.5px] leading-[1.55] text-fg2">Paste an invoice or a supplier email, or upload a PDF. The agent checks the payee with Bound before it pays.</p>
       </div>
