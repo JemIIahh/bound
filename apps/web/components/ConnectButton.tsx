@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useConnect, useConnection, useConnectors, useDisconnect, useSwitchChain, type Connector } from 'wagmi'
 import { chain } from '@/lib/wagmi'
 import { errorMessage } from '@/lib/api'
+import { setWalletDrop, useWalletDrop } from '@/lib/wallet-drop'
 import { errorText, primaryBtn, short } from './ui'
 
 /** Wallets to offer: EIP-6963 announced wallets, else the generic injected provider. */
@@ -11,14 +12,22 @@ function useWalletConnect() {
   const connectors = useConnectors()
   const discovered = connectors.filter((c) => c.id !== 'injected')
   const options = discovered.length ? discovered : connectors
-  const { mutate, isPending, error, reset } = useConnect()
-  const connect = (connector: Connector) => mutate({ connector })
+  const { mutate, isPending, error, reset: resetConnect } = useConnect()
+  const dropped = useWalletDrop()
+  const connect = (connector: Connector) => {
+    setWalletDrop(null)
+    mutate({ connector })
+  }
   const message = error
     ? (error as { name?: string }).name === 'ProviderNotFoundError'
       ? 'No browser wallet found. Install a wallet such as MetaMask, then reload.'
       : errorMessage(error)
-    : null
-  return { options, connect, pending: isPending, error: message, reset }
+    : dropped
+  const reset = () => {
+    setWalletDrop(null)
+    resetConnect()
+  }
+  return { options, connect, pending: isPending, error: message, reset, dropped }
 }
 
 const walletName = (c: Connector) => (c.id === 'injected' ? 'Browser wallet' : c.name)
@@ -43,7 +52,7 @@ export function ConnectButton() {
   const wrongNetwork = useWrongNetwork()
   const { mutate: disconnect } = useDisconnect()
   const { mutate: switchChain, isPending: switching } = useSwitchChain()
-  const { options, connect, pending, error, reset } = useWalletConnect()
+  const { options, connect, pending, error, reset, dropped } = useWalletConnect()
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -64,6 +73,11 @@ export function ConnectButton() {
   useEffect(() => {
     if (isConnected) setOpen(false)
   }, [isConnected])
+
+  // the wallet ended the connection on its own: open the note that says so
+  useEffect(() => {
+    if (dropped) setOpen(true)
+  }, [dropped])
 
   if (isConnected && address) {
     return (
