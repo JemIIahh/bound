@@ -139,13 +139,13 @@ export function ApprovalCard({
     switching: 'Switching to Tempo…',
     signing: 'Confirm in your wallet…',
     confirming: 'Confirming on Tempo…',
-  }[phase as string] ?? 'Sign allowlist update'
+  }[phase as string] ?? 'Sign to approve'
 
   const root = <span className="whitespace-nowrap font-mono text-[12px]">{short(rootAddress)}</span>
   const rootMessage = !isConnected ? (
-    <>Connect this organization&apos;s root wallet ({root}) to approve.</>
+    <>Connect your company wallet ({root}) to approve.</>
   ) : !isRoot ? (
-    <>The connected wallet isn&apos;t this organization&apos;s root account. Switch to {root} to approve.</>
+    <>The connected wallet isn&apos;t your company wallet. Switch to {root} to approve.</>
   ) : null
 
   const reviewing = !result && !!prepared && (phase === 'review' || busy) && phase !== 'rejecting'
@@ -218,7 +218,7 @@ export function ApprovalCard({
                     {phase === 'rejecting' ? 'Rejecting…' : 'Reject'}
                   </button>
                 </div>
-                <p className={hint}>Approving adds this wallet to your agent key&apos;s allowlist on Tempo. You sign the update with your root wallet, then the agent pays the invoice.</p>
+                <p className={hint}>Approving adds this wallet to your agent&apos;s approved list on Tempo. You sign the update with your company wallet, then the agent pays the invoice.</p>
                 {rootMessage && <p className="text-[13px] leading-relaxed font-medium text-acc2">{rootMessage}</p>}
               </>
             ) : (
@@ -238,21 +238,21 @@ export function ApprovalCard({
 
       {reviewing && prepared ? (
         <div className="flex min-w-0 flex-col border-t border-line2 pt-8 lg:border-l lg:border-t-0 lg:pl-12 lg:pt-0">
-          <h4 className="text-lg font-semibold tracking-[-0.015em]">Allowlist after you sign</h4>
+          <h4 className="text-lg font-semibold tracking-[-0.015em]">Approved list after you sign</h4>
           <p className={`mt-1 ${hint}`}>
-            Tempo replaces the agent key&apos;s whole recipient list with these {prepared.recipients.length} wallets. The agent can pay only them.
+            Tempo replaces the agent&apos;s whole approved list with these {prepared.recipients.length} wallets. The agent can pay only them.
           </p>
           <ul className="mt-4 flex flex-col">
             {prepared.recipients.map((r, i) => {
               const isNew = same(r, approval.wallet)
               const carried = prepared.carried.some((c) => same(c, r))
-              const label = isNew ? approval.label : same(r, rootAddress) ? 'Your root account' : labelFor(r)
+              const label = isNew ? approval.label : same(r, rootAddress) ? 'Your company wallet' : labelFor(r)
               return (
                 <li key={r} className={`flex gap-3 py-3 ${i ? 'border-t border-line2' : ''}`}>
                   <Avatar name={label ?? '?'} size={32} />
                   <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                      <span className="text-[15px] font-semibold">{label ?? 'Allowlisted wallet'}</span>
+                      <span className="text-[15px] font-semibold">{label ?? 'Approved wallet'}</span>
                       {isNew && <Pill tone="green">Adding</Pill>}
                     </div>
                     <span className="font-mono text-[12.5px] text-fg3">
@@ -286,7 +286,7 @@ export function ApprovalCard({
             {rootMessage && <p className={hint}>{rootMessage}</p>}
             {isTxHash(txHash) && (
               <a href={txUrl(txHash)} target="_blank" rel="noreferrer" className={`self-start font-mono text-[12.5px] text-fg3 ${link}`}>
-                Allowlist update {short(txHash)} ↗
+                Approval {short(txHash)} ↗
               </a>
             )}
             {error && <p className={errorText}>{error}</p>}
@@ -324,7 +324,7 @@ function Outcome({ result, txHash, onDismiss }: { result: { kind: 'approved'; pa
       <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[12.5px] text-fg3">
         {isTxHash(txHash) && (
           <a href={txUrl(txHash)} target="_blank" rel="noreferrer" className={link}>
-            Allowlist update {short(txHash)} ↗
+            Approval {short(txHash)} ↗
           </a>
         )}
         {isTxHash(payTx) && (

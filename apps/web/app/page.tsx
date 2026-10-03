@@ -1,13 +1,17 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { network } from '@/lib/chain'
-import { ArrowIcon, Avatar, CardFoot, LockIcon, Pill } from '@/components/atoms'
+import { Pill } from '@/components/atoms'
 import { BlockedStamp } from '@/components/BlockedStamp'
 import { EarlyAccess } from '@/components/EarlyAccess'
-import { card, invCard, roundBtn, wrap } from '@/components/ui'
+import { HowItWorks } from '@/components/HowItWorks'
+import { card, wrap } from '@/components/ui'
 
 const ctaLg =
   'inline-flex h-14 w-full items-center justify-center gap-2 whitespace-nowrap rounded-btn bg-acc px-4 text-[15px] font-bold text-[#140700] shadow-glow transition hover:brightness-110 sm:w-auto sm:px-7 sm:text-base'
+
+const ctaGhost =
+  'inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-btn border border-edge px-4 py-3 text-center text-[15px] font-bold text-fg transition hover:bg-fg/5 sm:w-auto sm:px-7 sm:text-base'
 
 /** The hero illustration: an agent log where Bound is switched off and Tempo still refuses the payment. */
 const LOG: { ts: string; k: string; m: ReactNode; tone?: 'warn' | 'no' | 'done' }[] = [
@@ -101,47 +105,6 @@ function Terminal() {
   )
 }
 
-const STEPS = [
-  {
-    tag: '01 · Suppliers',
-    when: 'Once',
-    title: 'Suppliers prove their wallet',
-    text: 'Acme links its wallet to acme.com. Anyone paying Acme can now check it.',
-    av: <Avatar name="Acme" />,
-    m1: 'Acme Ltd · verified acme.com',
-    m2: '0xc1a5…C426',
-    href: '/payee',
-    cta: 'Get your company verified',
-  },
-  {
-    tag: '02 · Bound',
-    when: 'Every payment',
-    title: 'Bound checks who owns it',
-    text: 'Before money moves: does this wallet belong to who it claims? A lookalike gets stopped.',
-    av: <Avatar name="?" flagged />,
-    m1: "Looks like Acme — it isn't",
-    m2: <span className="text-acc2">0xC1A5…C426 · blocked</span>,
-    href: '/verify',
-    cta: 'Check a wallet',
-  },
-  {
-    tag: '03 · Tempo',
-    when: 'Always on',
-    title: 'Tempo refuses strangers',
-    text: "Your agent's wallet can only pay suppliers you approved. Even with Bound switched off, the chain says no.",
-    av: (
-      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-ink text-cream" aria-hidden="true">
-        <LockIcon size={15} />
-      </span>
-    ),
-    m1: 'Refused on Tempo',
-    m2: <span className="text-acc2">not an approved supplier</span>,
-    href: '/app',
-    cta: 'Set up your payer dashboard',
-    inv: true,
-  },
-]
-
 export default function Home() {
   return (
     <main className="flex flex-1 flex-col">
@@ -158,11 +121,14 @@ export default function Home() {
                 <br /> can&apos;t pay a <span className="text-acc">stranger.</span>
               </h1>
               <p className="mt-6 max-w-[520px] text-[17px] leading-[1.55] text-fg2 sm:mt-8 sm:text-[19px]">
-                A fake email told an AI agent to send $5,000 to a lookalike wallet. <b className="font-semibold text-fg">We switched our own software off.</b> The payment
-                still didn&apos;t go through — because on Tempo, your agent can only pay suppliers you approved.
+                Bound checks who really owns a wallet before your AI agent pays it. In our test, a fake email told an agent to send $5,000 to a lookalike wallet.{' '}
+                <b className="font-semibold text-fg">We switched our own software off.</b> It still didn&apos;t go through, because on Tempo your agent can only pay suppliers you approved.
               </p>
-              <div className="mt-8 flex flex-wrap items-center gap-4 sm:mt-10">
-                <Link href="/try" className={ctaLg}>
+              <div className="mt-8 flex flex-col gap-3 sm:mt-10 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
+                <a href="#how-it-works" className={ctaLg}>
+                  See how it works <span aria-hidden="true" className="inline-block rotate-90">→</span>
+                </a>
+                <Link href="/try" className={ctaGhost}>
                   Try to make our AI agent pay a stranger <span aria-hidden="true">→</span>
                 </Link>
               </div>
@@ -176,39 +142,7 @@ export default function Home() {
         </section>
       </div>
 
-      <section className={`${wrap} pb-20 pt-6 sm:pb-32 sm:pt-10`}>
-        <div className="grid grid-cols-1 items-end gap-4 md:grid-cols-2 md:gap-10">
-          <h2 className="font-display text-[44px] font-extrabold leading-[0.96] tracking-[-0.045em] sm:text-[64px]">
-            Two locks. <span className="text-fg3">One is ours, one is the chain&apos;s.</span>
-          </h2>
-          <p className="max-w-[440px] text-[17px] text-fg2 md:justify-self-end">
-            Bound catches lookalike wallets before you pay. Tempo makes sure your agent couldn&apos;t pay one even if we missed it.
-          </p>
-        </div>
-        <ol className="mt-8 grid grid-cols-1 gap-4 sm:mt-14 min-[1100px]:grid-cols-3 min-[1100px]:gap-6">
-          {STEPS.map((s) => (
-            <li key={s.tag} className={`${s.inv ? invCard : card} flex min-w-0 flex-col`}>
-              <div className="flex items-center justify-between gap-4">
-                <Pill>{s.tag}</Pill>
-                <span className="whitespace-nowrap text-lg font-medium tracking-[-0.015em] sm:text-xl">{s.when}</span>
-              </div>
-              <h3 className="mt-8 text-2xl font-semibold leading-[1.12] tracking-[-0.025em] sm:mt-10 sm:text-[28px]">{s.title}</h3>
-              <p className="mt-2 text-[15.5px] leading-[1.55] text-fg2">{s.text}</p>
-              <CardFoot
-                className="mt-auto pt-8 sm:pt-10"
-                avatar={s.av}
-                m1={s.m1}
-                m2={s.m2}
-                action={
-                  <Link href={s.href} aria-label={s.cta} className={roundBtn}>
-                    <ArrowIcon />
-                  </Link>
-                }
-              />
-            </li>
-          ))}
-        </ol>
-      </section>
+      <HowItWorks wrap={wrap} />
 
       <section className={wrap}>
         <div
@@ -220,7 +154,7 @@ export default function Home() {
           </h2>
           <div className="min-[1100px]:justify-self-end min-[1100px]:text-right">
             <p className="mb-4 text-[17px] text-fg2 sm:mb-6">Write the scam email yourself. Watch it fail.</p>
-            <Link href="/try" className={ctaLg}>
+            <Link href="/try" className={`${ctaLg} !h-auto min-h-14 !whitespace-normal py-3 text-center`}>
               Try to make our AI agent pay a stranger <span aria-hidden="true">→</span>
             </Link>
           </div>

@@ -193,10 +193,10 @@ function Payees({ o }: { o: Overview }) {
   const root = o.org.rootAddress
   const active = o.pins.filter((p) => p.active)
   const rows = [
-    ...active.map((p) => ({ wallet: p.wallet, label: p.label, note: o.allowlist.some((a) => same(a, p.wallet)) ? 'Approved' : 'Not on the allowlist' })),
+    ...active.map((p) => ({ wallet: p.wallet, label: p.label, note: o.allowlist.some((a) => same(a, p.wallet)) ? 'Approved' : 'Not on the approved list' })),
     ...o.allowlist
       .filter((a) => !same(a, root) && !active.some((p) => same(p.wallet, a)))
-      .map((a) => ({ wallet: a, label: o.approvals.find((x) => same(x.wallet, a))?.label ?? 'Allowlisted wallet', note: 'Allowlisted, approval pending' })),
+      .map((a) => ({ wallet: a, label: o.approvals.find((x) => same(x.wallet, a))?.label ?? 'Approved wallet', note: 'On the list, approval pending' })),
   ]
   const hasRoot = o.allowlist.some((a) => same(a, root))
   const { used, max } = o.capacity
@@ -207,7 +207,7 @@ function Payees({ o }: { o: Overview }) {
     <section className={`${card} flex min-w-0 flex-col`} aria-labelledby="payees-label">
       <div className="flex items-center justify-between gap-4">
         <Pill icon={<LockIcon />}>Tempo rule</Pill>
-        <span className="whitespace-nowrap text-2xl font-medium leading-none tracking-[-0.02em] tabular-nums sm:text-[26px]" title="Recipients on the agent key's allowlist">
+        <span className="whitespace-nowrap text-2xl font-medium leading-none tracking-[-0.02em] tabular-nums sm:text-[26px]" title="Suppliers on the agent's approved list">
           <span className={full ? 'text-amber' : 'text-fg'}>{used}</span>
           <small className="ml-1 text-[13px] font-medium tracking-normal text-fg3">/ {max}</small>
         </span>
@@ -215,11 +215,11 @@ function Payees({ o }: { o: Overview }) {
       <h3 id="payees-label" className={`mt-8 ${cardTitle}`}>
         Your agent can only pay these
       </h3>
-      <p className="mt-2 text-[15.5px] leading-[1.55] text-fg2">Tempo enforces this list on the agent key itself — even when Bound is switched off.</p>
+      <p className="mt-2 text-[15.5px] leading-[1.55] text-fg2">Tempo enforces this list on the agent&apos;s payment key itself — even when Bound is switched off.</p>
       {full && (
         <p className="mt-4 flex items-start gap-2 text-[13px] font-medium leading-relaxed text-amber">
           <span className="mt-[6px] inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber" />
-          Nearly full. Tempo allows at most {max} recipients per agent key.
+          Nearly full. Tempo allows at most {max} recipients per payment key.
         </p>
       )}
       {rows.length === 0 ? (
@@ -249,7 +249,7 @@ function Payees({ o }: { o: Overview }) {
           </button>
         </div>
       )}
-      {hasRoot && <p className="mt-auto border-t border-line2 pt-4 text-[13px] leading-relaxed text-fg3">Also allowlisted: your root account, so the key starts out able to pay no one else.</p>}
+      {hasRoot && <p className="mt-auto border-t border-line2 pt-4 text-[13px] leading-relaxed text-fg3">Also on the list: your company wallet, so the key starts out able to pay no one else.</p>}
     </section>
   )
 }

@@ -41,12 +41,12 @@ const PATHS: Record<Role, Path> = {
     steps: [
       {
         title: 'Connect your company wallet.',
-        body: "It becomes your organization's root account. You sign your agent's key and every supplier approval with it. Bound never holds its keys.",
-        scene: <WalletScene label="Your company wallet" badge="Root account" />,
+        body: "It's the wallet that owns your agent's payment key. You sign the key and every supplier approval with it. Bound never holds it.",
+        scene: <WalletScene label="Your company wallet" badge="Connected" />,
       },
       {
-        title: 'Give your agent its own key.',
-        body: 'One transaction authorizes it, with a weekly spending limit that Tempo enforces onchain. Until you approve a supplier, it can only send money back to you.',
+        title: 'Give your agent a payment key.',
+        body: 'One transaction authorizes it, with a weekly spending limit that Tempo enforces. Until you approve a supplier, it can only send money back to you.',
         scene: <KeyScene />,
       },
       {
@@ -95,6 +95,29 @@ const PATHS: Record<Role, Path> = {
   },
 }
 
+// The whole idea in three screens, shown before the visitor picks a path.
+const STORY: Path = {
+  label: 'The big picture',
+  cta: { href: '/', label: '' },
+  steps: [
+    {
+      title: 'Scammers send your AI agent fake invoices.',
+      body: "A fake email says \"we changed our wallet\". Stablecoin payments can't be undone, and an agent can pay in a second.",
+      scene: <ScamScene />,
+    },
+    {
+      title: 'Bound checks who owns the wallet.',
+      body: 'Suppliers prove their wallet once. Before any money moves, Bound compares each invoice with that public list and stops lookalikes.',
+      scene: <CheckScene />,
+    },
+    {
+      title: 'You stay in control.',
+      body: 'Your agent can only pay suppliers you approved. A new one waits for your Approve, and Tempo refuses everyone else, even if Bound is off.',
+      scene: <ListScene />,
+    },
+  ],
+}
+
 const ROLES: { role: Role; title: string; text: string }[] = [
   { role: 'pay', title: 'I pay suppliers', text: 'My company has an AI agent that pays invoices' },
   { role: 'get', title: 'I get paid', text: "I'm a supplier and want payers to trust my wallet" },
@@ -104,17 +127,20 @@ const ROLES: { role: Role; title: string; text: string }[] = [
 /** First-visit guide: pick what you are here to do, then a few short screens that end on the right page. Shown once per browser. */
 export function WelcomeTour() {
   const [open, setOpen] = useState(false)
+  const [stage, setStage] = useState<'story' | 'choose' | 'path'>('story')
   const [role, setRole] = useState<Role | null>(null)
   const [step, setStep] = useState(0)
   const primary = useRef<HTMLButtonElement & HTMLAnchorElement>(null)
   const firstRole = useRef<HTMLButtonElement>(null)
 
-  const path = role ? PATHS[role] : null
+  const path = stage === 'story' ? STORY : stage === 'path' && role ? PATHS[role] : null
   const last = path ? step === path.steps.length - 1 : false
+  const isStory = stage === 'story'
 
   useEffect(() => {
     if (!seen() || new URLSearchParams(window.location.search).has('tour')) setOpen(true)
     const show = () => {
+      setStage('story')
       setRole(null)
       setStep(0)
       setOpen(true)
@@ -130,14 +156,24 @@ export function WelcomeTour() {
 
   const choose = useCallback((r: Role) => {
     setRole(r)
+    setStage('path')
     setStep(0)
   }, [])
 
-  const next = useCallback(() => setStep((s) => (path ? Math.min(path.steps.length - 1, s + 1) : s)), [path])
+  const next = useCallback(() => {
+    if (!path) return
+    if (isStory && last) setStage('choose')
+    else setStep((s) => Math.min(path.steps.length - 1, s + 1))
+  }, [path, isStory, last])
   const back = useCallback(() => {
-    if (step === 0) setRole(null)
-    else setStep(step - 1)
-  }, [step])
+    if (stage === 'choose') {
+      setStage('story')
+      setStep(STORY.steps.length - 1)
+    } else if (stage === 'path' && step === 0) {
+      setStage('choose')
+      setRole(null)
+    } else if (step > 0) setStep(step - 1)
+  }, [stage, step])
 
   // modal housekeeping: lock page scroll, restore focus on close
   useEffect(() => {
@@ -154,19 +190,19 @@ export function WelcomeTour() {
 
   useEffect(() => {
     if (!open) return
-    ;(role ? primary : firstRole).current?.focus({ preventScroll: true })
-  }, [open, role, step])
+    ;(stage === 'choose' ? firstRole : primary).current?.focus({ preventScroll: true })
+  }, [open, stage, step])
 
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') close()
-      else if (role && e.key === 'ArrowRight') next()
-      else if (role && e.key === 'ArrowLeft') back()
+      else if (stage !== 'choose' && e.key === 'ArrowRight') next()
+      else if (e.key === 'ArrowLeft') back()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, role, close, next, back])
+  }, [open, stage, close, next, back])
 
   if (!open) return null
   const s = path ? path.steps[step] : null
@@ -183,9 +219,9 @@ export function WelcomeTour() {
         <div className="flex items-center gap-3 px-5 pt-5 sm:px-8 sm:pt-7">
           <BoundMark size={24} />
           <div className="flex flex-1 gap-1.5" aria-hidden="true">
-            {(path ? path.steps : [null, null, null]).map((_, i) => (
+            {(path ? path.steps : STORY.steps).map((_, i) => (
               <span key={i} className="h-1 flex-1 overflow-hidden rounded-full bg-raised">
-                <span className="block h-full rounded-full bg-acc transition-[width] duration-200" style={{ width: path && i <= step ? '100%' : '0%' }} />
+                <span className="block h-full rounded-full bg-acc transition-[width] duration-200" style={{ width: stage === 'choose' || (path && i <= step) ? '100%' : '0%' }} />
               </span>
             ))}
           </div>
@@ -196,11 +232,11 @@ export function WelcomeTour() {
 
         {!path || !s ? (
           <div key="choose" className="tour-in flex min-h-[420px] flex-col px-5 pb-5 pt-6 sm:min-h-[470px] sm:px-8 sm:pb-7 sm:pt-8">
-            <p className="font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-acc2 sm:text-[12px]">Welcome to Bound</p>
+            <p className="font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-acc2 sm:text-[12px]">Now, your turn</p>
             <h2 id="tour-title" className="mt-2 text-balance font-display text-[26px] font-extrabold leading-[1.06] tracking-[-0.03em] text-fg sm:text-[32px]">
               What brings you here?
             </h2>
-            <p className="mt-2 text-pretty text-[15px] leading-relaxed text-fg2 sm:text-[16px]">Pick one and we&apos;ll show you the way. It takes under a minute.</p>
+            <p className="mt-2 text-pretty text-[15px] leading-relaxed text-fg2 sm:text-[16px]">Pick one and we&apos;ll show you exactly what to do.</p>
             <div className="mt-5 flex flex-col gap-2.5">
               {ROLES.map((r, i) => (
                 <button
@@ -218,13 +254,18 @@ export function WelcomeTour() {
                 </button>
               ))}
             </div>
-            <div className="mt-auto flex items-center justify-between gap-4 pt-5 text-[14px] text-fg3 sm:text-[15px]">
-              <Link href="/try" onClick={close} className="text-fg2 underline decoration-fg3/50 underline-offset-4 transition hover:text-fg">
+            <div className="mt-auto flex flex-col gap-3 pt-5 text-[14px] text-fg3 sm:text-[15px]">
+              <Link href="/try" onClick={close} className="self-start text-fg2 underline decoration-fg3/50 underline-offset-4 transition hover:text-fg">
                 Just want to see it work? Try the attack
               </Link>
-              <button type="button" onClick={close} className="shrink-0 px-1 transition hover:text-fg">
-                Skip
-              </button>
+              <div className="flex items-center justify-between">
+                <button type="button" onClick={back} className="px-1 transition hover:text-fg">
+                  Back
+                </button>
+                <button type="button" onClick={close} className="px-1 transition hover:text-fg">
+                  Skip
+                </button>
+              </div>
             </div>
           </div>
         ) : (
@@ -245,11 +286,17 @@ export function WelcomeTour() {
             </div>
 
             <div className="flex items-center gap-3 px-5 pb-5 pt-3 sm:px-8 sm:pb-7">
-              <button type="button" onClick={back} className="px-1 text-sm text-fg3 transition hover:text-fg sm:text-[15px]">
-                Back
-              </button>
+              {isStory && step === 0 ? (
+                <button type="button" onClick={close} className="px-1 text-sm text-fg3 transition hover:text-fg sm:text-[15px]">
+                  Skip
+                </button>
+              ) : (
+                <button type="button" onClick={back} className="px-1 text-sm text-fg3 transition hover:text-fg sm:text-[15px]">
+                  Back
+                </button>
+              )}
               <div className="ml-auto flex items-center gap-3">
-                {last ? (
+                {last && !isStory ? (
                   <>
                     <button type="button" onClick={close} className="hidden whitespace-nowrap px-1 text-sm text-fg3 transition hover:text-fg sm:block sm:text-[15px]">
                       Got it
@@ -323,7 +370,7 @@ function SceneRow({ label, children, delay }: { label: string; children: ReactNo
 function KeyScene() {
   return (
     <div className="w-[88%] max-w-[420px] rounded-xl border border-line bg-card px-4 py-1.5 shadow-card sm:rounded-2xl sm:px-5">
-      <SceneRow label="Agent key">
+      <SceneRow label="Payment key">
         <span className="font-mono">0x91e2…04aD</span>
       </SceneRow>
       <SceneRow label="Spending limit" delay="tour-d1">
@@ -424,6 +471,44 @@ function CheckScene() {
         <Badge tone="bad">
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-current" /> Lookalike · blocked
         </Badge>
+      </div>
+    </div>
+  )
+}
+
+function ScamScene() {
+  return (
+    <div className={sceneCard}>
+      <div className="flex items-center justify-between gap-3 text-[12px] text-fg3 sm:text-[13.5px]">
+        <span className="truncate">
+          From <span className="tour-mark rounded px-0.5 text-acc2">billing@acme-ltd.co</span>
+        </span>
+        <span className="font-mono">09:41</span>
+      </div>
+      <p className="mt-2 text-[13.5px] leading-snug text-fg sm:text-[15.5px]">&ldquo;We changed our wallet. Please pay invoice #2291 to:&rdquo;</p>
+      <p className="tour-late mt-2 rounded-lg bg-raised px-3 py-1.5">
+        <Addr head="0xC1A5" mid="d69D" tail="…C426" tone="bad" />
+      </p>
+    </div>
+  )
+}
+
+function ListScene() {
+  return (
+    <div className="w-[88%] max-w-[420px] space-y-2">
+      <div className="tour-in flex items-center justify-between gap-3 rounded-xl border border-line bg-card px-4 py-2.5 sm:rounded-2xl">
+        <span className="text-[13px] font-semibold text-fg sm:text-[15px]">Acme Ltd</span>
+        <Badge tone="ok">
+          <CheckIcon size={11} /> Approved
+        </Badge>
+      </div>
+      <div className="tour-in tour-d1 flex items-center justify-between gap-3 rounded-xl border border-acc/40 bg-card px-4 py-2.5 sm:rounded-2xl">
+        <Addr head="0xC1A5" mid="d69D" tail="…C426" tone="bad" />
+        <span className="tour-pop tour-d2">
+          <Badge tone="bad">
+            <CrossIcon size={10} /> Refused
+          </Badge>
+        </span>
       </div>
     </div>
   )

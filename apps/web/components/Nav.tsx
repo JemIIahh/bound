@@ -90,7 +90,7 @@ export function Nav() {
               </Link>
             ))}
           </nav>
-          <Link href="/try" onClick={() => setOpen(false)} className={`${primaryBtn} mt-3`}>
+          <Link href="/try" onClick={() => setOpen(false)} className={`${primaryBtn} mt-3 !h-auto min-h-12 py-3 text-center`}>
             Try to make our AI agent pay a stranger <ArrowIcon size={15} />
           </Link>
           {isConnected && (

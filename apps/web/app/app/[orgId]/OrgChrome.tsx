@@ -26,7 +26,7 @@ export function OrgHeader({ o, sub, actions }: { o: Overview; sub?: ReactNode; a
             </a>
           </span>
           <span>
-            Agent key <span className="font-mono text-[12.5px]">{short(o.org.agentKeyAddress)}</span>
+            Payment key <span className="font-mono text-[12.5px]">{short(o.org.agentKeyAddress)}</span>
           </span>
           {limit && (
             <span>
@@ -50,8 +50,8 @@ export function OrgHeader({ o, sub, actions }: { o: Overview; sub?: ReactNode; a
 export function KeyNotice({ o }: { o: Overview }) {
   if (!o.org.authorized)
     return (
-      <Notice title="The agent key isn't authorized yet">
-        <p>Payments are off until you sign the authorization with your root wallet.</p>
+      <Notice title="The agent's payment key isn't authorized yet">
+        <p>Payments are off until you sign the authorization with your company wallet.</p>
         <Link href="/app" className={`${primaryBtn} mt-4 self-start sm:w-auto sm:px-8`}>
           Finish setup
         </Link>
@@ -59,14 +59,14 @@ export function KeyNotice({ o }: { o: Overview }) {
     )
   if (o.keyStatus === 'unrestricted')
     return (
-      <Notice title="The agent key can pay anyone" tone="red">
+      <Notice title="The agent's payment key can pay anyone" tone="red">
         <p>It has no recipient restriction on Tempo, so Bound won&apos;t pay with it. Re-authorize the key with a recipient list.</p>
       </Notice>
     )
   if (o.keyStatus === 'unavailable')
     return (
-      <Notice title="Couldn't read the agent key from Tempo">
-        <p>The allowlist and remaining limit may be out of date. Bound keeps trying.</p>
+      <Notice title="Couldn't read the agent's payment key from Tempo">
+        <p>The approved list and remaining limit may be out of date. Bound keeps trying.</p>
       </Notice>
     )
   return null
