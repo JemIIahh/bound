@@ -213,7 +213,7 @@ function Payees({ o }: { o: Overview }) {
         </span>
       </div>
       <h3 id="payees-label" className={`mt-8 ${cardTitle}`}>
-        Your AI can only pay these
+        Your agent can only pay these
       </h3>
       <p className="mt-2 text-[15.5px] leading-[1.55] text-fg2">Tempo enforces this list on the agent key itself — even when Bound is switched off.</p>
       {full && (

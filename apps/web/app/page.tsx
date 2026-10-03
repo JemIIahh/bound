@@ -64,7 +64,7 @@ function Terminal() {
                 <circle cx="11.2" cy="9.5" r="1" fill="#A4A8B1" stroke="none" />
               </svg>
             </span>
-            AI assistant · pays invoices
+            AI agent · pays invoices
           </div>
           <Pill live>Live</Pill>
           <div className="flex w-full items-center gap-2 whitespace-nowrap text-sm text-fg2 sm:ml-auto sm:w-auto">
@@ -128,7 +128,7 @@ const STEPS = [
     tag: '03 · Tempo',
     when: 'Always on',
     title: 'Tempo refuses strangers',
-    text: "Your AI's wallet can only pay suppliers you approved. Even with Bound switched off, the chain says no.",
+    text: "Your agent's wallet can only pay suppliers you approved. Even with Bound switched off, the chain says no.",
     av: (
       <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-ink text-cream" aria-hidden="true">
         <LockIcon size={15} />
@@ -153,17 +153,17 @@ export default function Home() {
         <section className={`${wrap} relative pb-[72px] pt-8 sm:pb-[120px] sm:pt-14`}>
           <div className="grid grid-cols-1 items-center gap-12 min-[1100px]:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] min-[1100px]:gap-16">
             <div>
-              <h1 className="font-display text-[64px] font-extrabold leading-[0.92] tracking-[-0.045em] sm:text-[112px] sm:leading-[0.9]">
-                Your AI
+              <h1 className="font-display text-[54px] font-extrabold leading-[0.92] tracking-[-0.045em] sm:leading-[0.9] min-[640px]:text-[96px] min-[1100px]:text-[80px] min-[1250px]:text-[96px]">
+                Your AI agent
                 <br /> can&apos;t pay a <span className="text-acc">stranger.</span>
               </h1>
               <p className="mt-6 max-w-[520px] text-[17px] leading-[1.55] text-fg2 sm:mt-8 sm:text-[19px]">
-                A fake email told an AI assistant to send $5,000 to a lookalike wallet. <b className="font-semibold text-fg">We switched our own software off.</b> The payment
-                still didn&apos;t go through — because on Tempo, the AI can only pay suppliers you approved.
+                A fake email told an AI agent to send $5,000 to a lookalike wallet. <b className="font-semibold text-fg">We switched our own software off.</b> The payment
+                still didn&apos;t go through — because on Tempo, your agent can only pay suppliers you approved.
               </p>
               <div className="mt-8 flex flex-wrap items-center gap-4 sm:mt-10">
                 <Link href="/try" className={ctaLg}>
-                  Try to make our AI pay a stranger <span aria-hidden="true">→</span>
+                  Try to make our AI agent pay a stranger <span aria-hidden="true">→</span>
                 </Link>
               </div>
               <p className="mt-6 flex items-center gap-2 text-sm text-fg3">
@@ -182,7 +182,7 @@ export default function Home() {
             Two locks. <span className="text-fg3">One is ours, one is the chain&apos;s.</span>
           </h2>
           <p className="max-w-[440px] text-[17px] text-fg2 md:justify-self-end">
-            Bound catches lookalike wallets before you pay. Tempo makes sure your AI couldn&apos;t pay one even if we missed it.
+            Bound catches lookalike wallets before you pay. Tempo makes sure your agent couldn&apos;t pay one even if we missed it.
           </p>
         </div>
         <ol className="mt-8 grid grid-cols-1 gap-4 sm:mt-14 min-[1100px]:grid-cols-3 min-[1100px]:gap-6">
@@ -216,12 +216,12 @@ export default function Home() {
           style={{ background: 'radial-gradient(60% 90% at 100% 0%, rgba(255,90,60,0.16), rgba(255,90,60,0) 70%), var(--color-card)' }}
         >
           <h2 className="font-display text-5xl font-extrabold leading-[0.92] tracking-[-0.045em] sm:text-[72px]">
-            Think your AI can be tricked? <span className="text-acc">Try it.</span>
+            Think your AI agent can be tricked? <span className="text-acc">Try it.</span>
           </h2>
           <div className="min-[1100px]:justify-self-end min-[1100px]:text-right">
             <p className="mb-4 text-[17px] text-fg2 sm:mb-6">Write the scam email yourself. Watch it fail.</p>
             <Link href="/try" className={ctaLg}>
-              Try to make our AI pay a stranger <span aria-hidden="true">→</span>
+              Try to make our AI agent pay a stranger <span aria-hidden="true">→</span>
             </Link>
           </div>
         </div>

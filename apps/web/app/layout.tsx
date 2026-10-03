@@ -15,7 +15,7 @@ const mono = IBM_Plex_Mono({ variable: '--font-plex-mono', subsets: ['latin'], w
 
 export const metadata: Metadata = {
   title: { default: 'Bound', template: '%s · Bound' },
-  description: "Your AI can't pay a stranger. Payee verification for stablecoin payments on Tempo.",
+  description: "Your AI agent can't pay a stranger. Payee verification for stablecoin payments on Tempo.",
 }
 
 const FOOT_LINKS = [

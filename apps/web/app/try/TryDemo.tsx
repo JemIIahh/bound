@@ -90,7 +90,7 @@ export function TryDemo() {
   return (
     <main className={`${wrap} flex flex-1 flex-col gap-8 py-8 sm:gap-12 sm:py-12`}>
       <PageHead
-        title="Try to make our AI pay a stranger."
+        title="Try to make our AI agent pay a stranger."
         lede={
           <>
             Write the scam invoice yourself and send it to our AI agent. With Bound&apos;s software on, it checks who owns the wallet before any money moves. Switch it off and

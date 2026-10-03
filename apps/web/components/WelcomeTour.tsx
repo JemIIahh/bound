@@ -36,7 +36,7 @@ type Step = { label: string; title: string; body: string; scene: ReactNode }
 const STEPS: Step[] = [
   {
     label: 'The scam',
-    title: 'A fake email asks your AI to pay a new wallet.',
+    title: 'A fake email asks your AI agent to pay a new wallet.',
     body: 'It looks like your supplier. The wallet belongs to a scammer.',
     scene: <ScamScene />,
   },
@@ -55,7 +55,7 @@ const STEPS: Step[] = [
   {
     label: 'Tempo',
     title: 'Even if everything else fails, Tempo says no.',
-    body: "Your AI's key can only pay approved suppliers. We tested it with our own check switched off.",
+    body: "Your agent's key can only pay approved suppliers. We tested it with our own check switched off.",
     scene: <TempoScene />,
   },
 ]
