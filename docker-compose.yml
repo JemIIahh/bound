@@ -1,0 +1,22 @@
+# Backend only: the Bound API server with a persistent named volume for its SQLite file.
+#   cp .env.example apps/server/.env   # fill in BOUND_REGISTRY_ADDRESS, ATTESTER_PRIVATE_KEY, SERVER_SECRET, ...
+#   docker compose up -d --build
+# Data lives in the `bound-data` volume at /data/bound.db (no Postgres, no other containers).
+services:
+  server:
+    build: .
+    image: bound-server:latest
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8787}:8787"
+    env_file:
+      - path: apps/server/.env
+        required: false
+    environment:
+      PORT: "8787"
+      DATABASE_PATH: /data/bound.db
+    volumes:
+      - bound-data:/data
+
+volumes:
+  bound-data:
