@@ -5,6 +5,8 @@ import type { Config } from '../config'
 import { newId } from '../crypto'
 import { invoices } from '../db/schema'
 import { perOrgLimit } from '../rate-limit'
+import { HttpError } from '../app'
+import { agentBudget } from '../services/agent-budget'
 import { nowSeconds } from '../services/events'
 import type { ServiceDeps } from '../services/payments'
 import { runAgent } from '../agent/run'
@@ -28,7 +30,9 @@ export function labRouter(deps: ServiceDeps, run: AgentRunner = runAgent, limit:
   const r = Router()
   r.post('/lab/:orgId/run', requireOrg(deps), limit, (req, res) => {
     const b = body.parse(req.body)
-    const id = createLabInvoice(deps, res.locals.org.id, b.text) // org set by requireOrg
+    const busy = agentBudget(deps, res.locals.org.id) // org set by requireOrg
+    if (busy) throw new HttpError(429, busy)
+    const id = createLabInvoice(deps, res.locals.org.id, b.text)
     startAgent(deps, run, id, labMode(b.guardOff))
     res.status(202).json({ invoiceId: id })
   })

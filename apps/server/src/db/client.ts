@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS indexer_state (id TEXT PRIMARY KEY, last_block INTEGE
 CREATE TABLE IF NOT EXISTS demo_runs (id TEXT PRIMARY KEY, invoice_id TEXT NOT NULL, guard_off INTEGER NOT NULL, created_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS demo_runs_created ON demo_runs (created_at);
 CREATE TABLE IF NOT EXISTS signups (email TEXT PRIMARY KEY, role TEXT NOT NULL, company TEXT, created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS agent_usage (invoice_id TEXT PRIMARY KEY, org_id TEXT NOT NULL, model TEXT NOT NULL, calls INTEGER NOT NULL, input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL, cache_read_tokens INTEGER NOT NULL, cache_write_tokens INTEGER NOT NULL, cost_micro_usd INTEGER NOT NULL, created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS agent_usage_created ON agent_usage (created_at);
+CREATE INDEX IF NOT EXISTS invoices_created ON invoices (created_at);
 `
 
 export function migrate(db: Db) {

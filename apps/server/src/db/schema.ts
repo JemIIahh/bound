@@ -132,3 +132,17 @@ export const signups = sqliteTable('signups', {
   company: text('company'),
   createdAt: integer('created_at').notNull(),
 })
+
+/** Model usage of one agent run (keyed by its invoice), with an estimated cost; read by `pnpm agent:usage`. */
+export const agentUsage = sqliteTable('agent_usage', {
+  invoiceId: text('invoice_id').primaryKey(),
+  orgId: text('org_id').notNull(),
+  model: text('model').notNull(),
+  calls: integer('calls').notNull(),               // model responses in the run
+  inputTokens: integer('input_tokens').notNull(),
+  outputTokens: integer('output_tokens').notNull(),
+  cacheReadTokens: integer('cache_read_tokens').notNull(),
+  cacheWriteTokens: integer('cache_write_tokens').notNull(),
+  costMicroUsd: integer('cost_micro_usd').notNull(), // estimate from AGENT_PRICE_*_PER_MTOK
+  createdAt: integer('created_at').notNull(),
+})

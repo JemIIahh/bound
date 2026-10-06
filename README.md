@@ -120,6 +120,10 @@ The lookalike was mined to match the full 4 + 4 characters that the core check u
 
 Mainnet: deployment pending (see Testnet above).
 
+### Agent cost controls
+
+Every agent run calls the model on Bound's key, so runs are capped per rolling day: `AGENT_RUNS_PER_DAY` (default 500) across the dashboard, the attack lab and the public demo, and `AGENT_RUNS_PER_ORG_DAY` (default 50) per org (the public demo org is held by `DEMO_RUNS_PER_DAY` instead). A capped request gets `429` with a plain message. Each run's token usage and an estimated cost (`AGENT_PRICE_IN_PER_MTOK` / `AGENT_PRICE_OUT_PER_MTOK`, default $5 / $25 for Claude Opus 5) are stored per invoice; `pnpm --filter @bound/server agent:usage` prints the last 24 hours, all time, cost per run and the busiest orgs.
+
 ### Hosted deployment
 
 The server (`apps/server`) and the web app (`apps/web`) deploy separately, for example the server on Railway and the web app on Vercel. Besides the keys in [`.env.example`](.env.example):

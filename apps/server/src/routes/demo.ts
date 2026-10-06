@@ -11,6 +11,7 @@ import type { ServiceDeps } from '../services/payments'
 import { AGENT_ERROR_PREFIX, runAgent, type AgentLogEntry } from '../agent/run'
 import { invoiceView, startAgent, type AgentRunner } from './invoices'
 import { createLabInvoice, labAllowed, labMode } from './lab'
+import { agentBudget } from '../services/agent-budget'
 
 export const DEMO_MAX_TEXT_CHARS = 4000
 export const DEMO_OFFLINE = 'The demo AI is offline right now.'
@@ -45,6 +46,9 @@ function demoStatus(deps: ServiceDeps): Status & { orgId?: string } {
   const since = nowSeconds() - DAY_SECONDS
   const today = deps.db.select({ n: count() }).from(demoRuns).where(gt(demoRuns.createdAt, since)).get()?.n ?? 0
   if (today >= deps.config.demoRunsPerDay) return { status: 'busy', message: DEMO_BUSY }
+  // the overall agent cap counts demo runs too; the per-org cap doesn't apply (DEMO_RUNS_PER_DAY is this org's cap)
+  const busy = agentBudget(deps, org.id, { perOrg: false })
+  if (busy) return { status: 'busy', message: busy }
   return { status: 'ready', message: null, orgId: org.id }
 }
 

@@ -14,7 +14,8 @@
     "demo:lookalike": "tsx scripts/mine-lookalike.ts",
     "demo:rehearse": "tsx scripts/rehearse.ts",
     "demo:public-org": "tsx scripts/public-demo-org.ts",
-    "signups:count": "tsx scripts/signups-count.ts"
+    "signups:count": "tsx scripts/signups-count.ts",
+    "agent:usage": "tsx scripts/agent-usage.ts"
   },
   "dependencies": {
     "@bound/core": "workspace:*",

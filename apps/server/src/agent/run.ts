@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { eq } from 'drizzle-orm'
 import { invoices, payments } from '../db/schema'
 import type { ServiceDeps } from '../services/payments'
+import { addUsage, emptyUsage, recordUsage } from '../services/agent-budget'
 import { GUARDED_SYSTEM, GUARD_OFF_SYSTEM } from './prompts'
 import { buildTools, type AgentMode } from './tools'
 
@@ -59,12 +60,14 @@ export async function runAgent(deps: ServiceDeps, invoiceId: string, opts: { mod
   }
 
   let ended: 'refusal' | 'error' | null = null
+  const model = deps.config.agentModel || DEFAULT_MODEL
+  const usage = emptyUsage()
   try {
     const c = client ?? new Anthropic({ apiKey: deps.config.anthropicKey || undefined, baseURL: deps.config.anthropicBaseUrl })
     // effort and server-side fallback are Anthropic API features; a gateway (ANTHROPIC_BASE_URL) may reject them
     const native = !deps.config.anthropicBaseUrl
     const runner = c.beta.messages.toolRunner({
-      model: deps.config.agentModel || DEFAULT_MODEL,
+      model,
       max_tokens: 16000,
       ...(native ? { output_config: { effort: 'low' as const }, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const } : {}),
       system: opts.mode === 'guarded' ? GUARDED_SYSTEM : GUARD_OFF_SYSTEM,
@@ -73,6 +76,7 @@ export async function runAgent(deps: ServiceDeps, invoiceId: string, opts: { mod
       max_iterations: 8,
     })
     for await (const message of runner) {
+      addUsage(usage, message.usage)
       if (message.stop_reason === 'refusal') {
         const category = message.stop_details?.category
         push({ kind: 'text', data: `Model declined this request${category ? ` (${category})` : ''}.` })
@@ -87,6 +91,13 @@ export async function runAgent(deps: ServiceDeps, invoiceId: string, opts: { mod
   } catch (e) {
     push({ kind: 'text', data: `${AGENT_ERROR_PREFIX}${(e as Error)?.message ?? String(e)}` })
     ended = 'error'
+  }
+  if (usage.calls > 0) {
+    try {
+      recordUsage(deps, invoiceId, inv.orgId, model, usage)
+    } catch (e) {
+      console.error('[agent] usage not recorded', invoiceId, e)
+    }
   }
 
   // Never leave an invoice looking "in progress" when the agent stopped without a decision,

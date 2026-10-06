@@ -4,6 +4,8 @@ import { z } from 'zod'
 const hex = z.string().regex(/^0x[0-9a-fA-F]+$/)
 /** A whole number from env, where an empty value means "use the default". */
 const intEnv = (def: number, min = 0) => z.preprocess((v) => (v === '' ? undefined : v), z.coerce.number().int().min(min).default(def))
+/** A non-negative number from env (decimals allowed), where an empty value means "use the default". */
+const numEnv = (def: number) => z.preprocess((v) => (v === '' ? undefined : v), z.coerce.number().min(0).default(def))
 const schema = z.object({
   TEMPO_NETWORK: z.enum(['testnet', 'mainnet']).default('testnet'),
   BOUND_REGISTRY_ADDRESS: hex,
@@ -28,6 +30,13 @@ const schema = z.object({
   DEMO_PUBLIC_ORG_ID: z.string().optional().transform((v) => (v?.trim() ? v.trim() : undefined)),
   DEMO_RUNS_PER_IP_HOUR: intEnv(6, 1),
   DEMO_RUNS_PER_DAY: intEnv(300),
+  // Agent spend caps. Every agent run is one invoice; runs per rolling day for everyone (dashboard, lab and public demo)
+  // and per org (the public demo org is held by DEMO_RUNS_PER_DAY instead); 0 pauses new runs.
+  AGENT_RUNS_PER_DAY: intEnv(500),
+  AGENT_RUNS_PER_ORG_DAY: intEnv(50),
+  // Model price for the usage log's cost estimate, USD per million tokens (defaults: Claude Opus 5 via 0G).
+  AGENT_PRICE_IN_PER_MTOK: numEnv(5),
+  AGENT_PRICE_OUT_PER_MTOK: numEnv(25),
   // Early-access sign-ups (POST /v1/signups) per client IP per hour.
   SIGNUPS_PER_IP_HOUR: intEnv(10, 1),
 })
@@ -43,6 +52,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     anthropicKey: e.ANTHROPIC_API_KEY,
     anthropicBaseUrl: e.ANTHROPIC_BASE_URL,
     agentModel: e.AGENT_MODEL,
+    agentRunsPerDay: e.AGENT_RUNS_PER_DAY,
+    agentRunsPerOrgDay: e.AGENT_RUNS_PER_ORG_DAY,
+    agentPriceInPerMTok: e.AGENT_PRICE_IN_PER_MTOK,
+    agentPriceOutPerMTok: e.AGENT_PRICE_OUT_PER_MTOK,
     databasePath: e.DATABASE_PATH,
     port: e.PORT,
     webOrigin: e.WEB_ORIGIN,

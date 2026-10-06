@@ -7,6 +7,7 @@ import { requireOrg } from '../auth'
 import { newId } from '../crypto'
 import { invoices, payments } from '../db/schema'
 import { perOrgLimit } from '../rate-limit'
+import { agentBudget } from '../services/agent-budget'
 import { nowSeconds } from '../services/events'
 import type { ServiceDeps } from '../services/payments'
 import { isPdfBase64, runAgent, type AgentLogEntry } from '../agent/run'
@@ -67,6 +68,8 @@ export function invoicesRouter(deps: ServiceDeps, run: AgentRunner = runAgent, l
     const raw = invoiceRaw(req.body)
     const id = newId('inv')
     const orgId: string = res.locals.org.id // set by requireOrg
+    const busy = agentBudget(deps, orgId)
+    if (busy) throw new HttpError(429, busy)
     deps.db.insert(invoices).values({ id, orgId, raw, lab: 0, createdAt: nowSeconds() }).run()
     startAgent(deps, run, id, 'guarded')
     res.status(202).json({ invoiceId: id })
