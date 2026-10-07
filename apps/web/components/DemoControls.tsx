@@ -62,7 +62,7 @@ export function Switch({ id, label, text, on, onChange, danger = false }: { id: 
 /** Two or more mutually exclusive choices ("Pay an invoice" / "Buy data from a paid API"). */
 export function Segmented<T extends string>({ label, options, value, onChange }: { label: string; options: { value: T; label: string }[]; value: T; onChange: (value: T) => void }) {
   return (
-    <div role="group" aria-label={label} className="grid w-full auto-cols-fr grid-flow-col gap-1 rounded-[22px] border border-line bg-card p-1 sm:inline-grid sm:w-auto sm:auto-cols-auto sm:rounded-full">
+    <div role="group" aria-label={label} className="grid w-full auto-cols-fr grid-flow-col gap-1 rounded-[22px] border border-line bg-card p-1 sm:w-auto sm:auto-cols-auto sm:self-start sm:rounded-full">
       {options.map((o) => (
         <button
           key={o.value}
