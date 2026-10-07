@@ -88,12 +88,20 @@ export function TryDemo() {
   return (
     <main className={`${wrap} flex flex-1 flex-col gap-8 py-8 sm:gap-12 sm:py-12`}>
       <PageHead
-        title="Try to make our AI agent pay a stranger."
+        title={scenario === 'api' ? 'Hijack a paid API. Watch the agent get stopped.' : 'Try to make our AI agent pay a stranger.'}
         lede={
-          <>
-            Write the scam invoice yourself and send it to our AI agent. With Bound&apos;s software on, it checks who owns the wallet before any money moves. Switch it off and
-            the agent pays whatever it&apos;s told. Tempo still refuses any wallet the company never approved.
-          </>
+          scenario === 'api' ? (
+            // a scripted agent step pays here, not a language model: never call it AI
+            <>
+              An agent step buys a price index from a paid API over MPP (HTTP 402). Switch on the hijack and the API names a scammer&apos;s wallet. With Bound&apos;s
+              software on, the agent stops before signing. Switch it off and Tempo still refuses any wallet the company never approved.
+            </>
+          ) : (
+            <>
+              Write the scam invoice yourself and send it to our AI agent. With Bound&apos;s software on, it checks who owns the wallet before any money moves. Switch it off and
+              the agent pays whatever it&apos;s told. Tempo still refuses any wallet the company never approved.
+            </>
+          )
         }
       >
         <p className="flex flex-wrap gap-x-5 gap-y-1 text-[14px] text-fg3">
