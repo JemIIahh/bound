@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@bound/core": "workspace:*",
+    "@bound/sdk": "workspace:*",
     "viem": "^2.57.3",
     "ox": "^1.8.5",
     "express": "^5.0.0",

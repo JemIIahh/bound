@@ -10,6 +10,7 @@ import { orgsRouter } from './routes/orgs'
 import { invoicesRouter } from './routes/invoices'
 import { mountLab } from './routes/lab'
 import { mountDemo } from './routes/demo'
+import { mountDemoApi } from './routes/demo-api'
 import { signupsRouter } from './routes/signups'
 import { mountMcp } from './mcp'
 
@@ -29,5 +30,6 @@ app.use('/v1', invoicesRouter(deps))
 app.use('/v1', signupsRouter(deps))
 if (!mountLab(app, deps)) console.log('attack lab disabled (mainnet without LAB_ENABLED=true)')
 if (!mountDemo(app, deps)) console.log('public demo disabled (testnet only)')
+mountDemoApi(app, deps) // the paid-API demo (/v1/demo/api/data, /v1/demo/api-runs): same rules as the public demo
 mountMcp(app, deps) // public, read-only: verify_payee, verify_payment_request + lookup_payee only
 finalize(app).listen(config.port, () => console.log(`bound server on :${config.port} (${config.network})`))

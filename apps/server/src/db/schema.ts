@@ -125,6 +125,16 @@ export const demoRuns = sqliteTable('demo_runs', {
   createdAt: integer('created_at').notNull(),
 })
 
+/** Public paid-API demo runs (POST /v1/demo/api-runs); counted for DEMO_API_RUNS_PER_DAY. */
+export const demoApiRuns = sqliteTable('demo_api_runs', {
+  id: text('id').primaryKey(),                     // dar_<random>
+  hijacked: integer('hijacked').notNull(),
+  guardOff: integer('guard_off').notNull(),
+  outcome: text('outcome').notNull(),              // running | paid | blocked_by_bound | blocked_by_tempo | failed
+  txHash: text('tx_hash'),
+  createdAt: integer('created_at').notNull(),
+})
+
 /** Early-access sign-ups (POST /v1/signups). Never listed by the API. */
 export const signups = sqliteTable('signups', {
   email: text('email').primaryKey(),               // trimmed, lower-cased
