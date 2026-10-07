@@ -1,11 +1,15 @@
-/** The "Blocked by Tempo" rubber stamp: the chain refused a payment even with Bound's check switched off. */
+import type { ReactNode } from 'react'
+
+/** The "Blocked by Tempo" rubber stamp: the chain refused a payment even with Bound's check switched off. `by` names who stopped it. */
 export function BlockedStamp({
   verb = 'Blocked',
+  by = 'Tempo',
   note = 'Our software was off. Tempo still said no.',
   className = '',
 }: {
   verb?: string
-  note?: string
+  by?: string
+  note?: ReactNode
   className?: string
 }) {
   return (
@@ -16,7 +20,7 @@ export function BlockedStamp({
         <b className="block text-[30px] font-black uppercase leading-[0.95] tracking-[-0.01em] sm:text-[54px]">
           {verb}
           <br />
-          by Tempo
+          by {by}
         </b>
         <small className="mt-1.5 block text-[11.5px] font-semibold text-[#FFB08F] sm:mt-2 sm:text-[13px]">{note}</small>
       </div>

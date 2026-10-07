@@ -174,6 +174,24 @@ export type RunDetail = Omit<InvoiceDetail, 'orgId' | 'raw'> & {
 /** `GET /v1/demo`: whether the public demo can start a run now. `message` is shown as is. */
 export type DemoStatus = { status: 'ready' | 'unavailable' | 'offline' | 'busy'; message: string | null; runsPerHour: number; maxChars: number }
 
+/** `GET /v1/demo/api-runs/status`: whether the paid-API demo can start a run now. `message` is shown as is. */
+export type ApiRunStatus = { status: 'ready' | 'unavailable' | 'busy'; message: string | null; runsPerHour: number }
+
+/** One step of a paid-API demo run: one plain sentence, plus whatever the server adds (addresses, amounts). */
+export type ApiRunStep = { kind: 'request' | 'challenge' | 'check' | 'decision' | 'sign' | 'result'; text: string; data?: unknown }
+
+/** `POST /v1/demo/api-runs` `{ hijacked, guardOff }`: an agent step buys data from the demo paid API (MPP, HTTP 402). */
+export type ApiRunResult = {
+  steps: ApiRunStep[]
+  outcome: 'paid' | 'blocked_by_bound' | 'blocked_by_tempo' | 'failed'
+  /** The wallet the API asked to be paid. */
+  recipient: string
+  txHash: string | null
+  txUrl: string | null
+  /** One plain sentence. */
+  message: string
+}
+
 /** `POST /v1/orgs/:orgId/approvals/:id/prepare` */
 export type PreparedApproval = {
   call: RootCall

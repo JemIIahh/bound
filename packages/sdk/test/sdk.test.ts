@@ -25,3 +25,12 @@ test('sends bearer token when configured', async () => {
   expect(url).toBe('https://a/v1/verify')
   expect(init.headers.authorization).toBe('Bearer t')
 })
+test('verifyService posts the address and domain to /v1/verify-service', async () => {
+  const fetch = vi.fn(async (_u: string, _i: any) => new Response(JSON.stringify({ verdict: 'MATCH', action: 'ASK' }), { status: 200 }))
+  const r = await new BoundClient({ baseUrl: 'https://a', fetch: fetch as any }).verifyService({ address: '0x' + '11'.repeat(20), domain: 'acme.example' })
+  expect(r.verdict).toBe('MATCH')
+  const [url, init] = fetch.mock.calls[0]!
+  expect(url).toBe('https://a/v1/verify-service')
+  expect(init.method).toBe('POST')
+  expect(JSON.parse(init.body)).toEqual({ address: '0x' + '11'.repeat(20), domain: 'acme.example' })
+})

@@ -105,3 +105,36 @@ export async function verifyPayee(
   }
   return { ...result, action, checkId, ...(keyUnrestricted ? { keyUnrestricted: true as const } : {}) }
 }
+
+const covers = (domain: string, root: string) => domain === root || domain.endsWith(`.${root}`)
+
+/**
+ * Confirmation of Payee for a SERVICE: is `address` the wallet Bound has verified for `domain`? The claimed payee is the active
+ * registry record whose domain is `domain` (or a parent of it); without a domain it is the record owning the wallet itself, so the
+ * answer is "is this an active Bound-verified wallet". Never org-scoped (no pins, no allowlist).
+ */
+export async function verifyService(deps: ServiceDeps, input: { address: Address; domain?: string }): Promise<VerifyOutput> {
+  const address = getAddress(input.address)
+  const domain = input.domain === undefined ? undefined : normalizeDomain(input.domain)
+  // an empty domain must not silently widen the question to "any verified wallet"
+  if (domain === '') throw new HttpError(400, 'Invalid domain')
+  const active = deps.db.select().from(payees).all().filter((p) => !p.revokedAt && !p.supersededAt)
+  let claim: PayeeRow | undefined
+  if (domain) claim = active.find((p) => covers(domain, normalizeDomain(p.domain)))
+  else {
+    const r = await deps.ops.resolveRecipient(address)
+    claim = active.find((p) => same(p.wallet, r.effective))
+  }
+  const out = await verifyPayee(deps, { address, payeeName: claim?.legalName ?? domain ?? address, senderDomain: domain ?? claim?.domain })
+  // A service IS its domain: a verified wallet registered for another domain is not this service's wallet, even when the names
+  // agree (acme-ltd.co vs Acme Ltd). The invoice rule that keeps MATCH on a domain mismatch does not apply here.
+  if (domain && out.verdict === 'MATCH' && !(out.payee && covers(domain, normalizeDomain(out.payee.domain)))) {
+    const reasons = [
+      ...out.reasons.filter((r) => r.code !== 'domain_mismatch'),
+      { code: 'domain_mismatch' as const, detail: out.payee ? `${domain} is not ${out.payee.legalName}'s registered domain (${out.payee.domain})` : `${domain} is not a registered domain` },
+    ]
+    const demoted = { ...out, verdict: 'NO_MATCH' as const, reasons }
+    return { ...demoted, action: decideAction(demoted) }
+  }
+  return out
+}

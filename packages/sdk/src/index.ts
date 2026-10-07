@@ -1,6 +1,7 @@
 import type { Action, VerifyResult } from '@bound/core'
 export { buildAuthorizeKeyCall, buildSetAllowlistCall, readAllowlist, withRecipient, decideAction } from '@bound/core'
 export type { VerifyResult, Verdict, Action } from '@bound/core'
+export * from './guard'
 
 export type VerifyResponse = VerifyResult & { action: Action; checkId: string }
 export type PayeeRow = Record<string, unknown>
@@ -23,6 +24,10 @@ export class BoundClient {
   }
   verifyPayee(i: { address: string; payeeName: string; senderDomain?: string }) {
     return this.req<VerifyResponse>('/v1/verify', { method: 'POST', body: JSON.stringify(i) })
+  }
+  /** Is this wallet the verified one for `domain`? Without a domain: is it an active Bound-verified wallet at all? */
+  verifyService(i: { address: string; domain?: string }) {
+    return this.req<VerifyResponse>('/v1/verify-service', { method: 'POST', body: JSON.stringify(i) })
   }
   /** Returns null when the wallet is unknown (404); other failures throw. */
   async getPayee(wallet: string): Promise<PayeeRow | null> {

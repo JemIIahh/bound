@@ -14,12 +14,14 @@
     "demo:lookalike": "tsx scripts/mine-lookalike.ts",
     "demo:rehearse": "tsx scripts/rehearse.ts",
     "demo:public-org": "tsx scripts/public-demo-org.ts",
+    "demo:public-allow-acme": "tsx scripts/public-demo-allow-acme.ts",
     "signups:count": "tsx scripts/signups-count.ts",
     "agent:usage": "tsx scripts/agent-usage.ts"
   },
   "dependencies": {
     "@bound/core": "workspace:*",
-    "viem": "^2.57.0",
+    "@bound/sdk": "workspace:*",
+    "viem": "^2.57.3",
     "ox": "^1.8.5",
     "express": "^5.0.0",
     "cors": "^2.8.5",
@@ -29,6 +31,7 @@
     "dotenv": "^16.4.0",
     "@anthropic-ai/sdk": "^0.129.0",
     "@modelcontextprotocol/sdk": "^1.31.0",
+    "mppx": "^0.13.1",
     "tsx": "^4.19.0"
   },
   "devDependencies": {

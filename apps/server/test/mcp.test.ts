@@ -55,10 +55,10 @@ describe('public MCP endpoint', () => {
     expect(text).toContain('lookup_payee')
   })
 
-  test('an MCP client sees exactly the two public read-only tools', async () => {
+  test('an MCP client sees exactly the three public read-only tools', async () => {
     const c = await connect(setup().app)
     const { tools } = await c.listTools()
-    expect(tools.map((t) => t.name).sort()).toEqual(['lookup_payee', 'verify_payee'])
+    expect(tools.map((t) => t.name).sort()).toEqual(['lookup_payee', 'verify_payee', 'verify_payment_request'])
     expect(tools.every((t) => t.annotations?.readOnlyHint === true)).toBe(true)
   })
 

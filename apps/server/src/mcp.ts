@@ -5,8 +5,10 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { z } from 'zod'
 import { getAddress, isAddress } from 'viem'
 import { or, sql } from 'drizzle-orm'
+import { decidePayment, type RecipientCheck } from '@bound/core'
+import { HttpError } from './app'
 import { payees } from './db/schema'
-import { verifyPayee } from './services/verify-service'
+import { verifyPayee, verifyService } from './services/verify-service'
 import type { ServiceDeps } from './services/payments'
 import { perIpLimit } from './rate-limit'
 
@@ -41,6 +43,32 @@ function buildServer(deps: ServiceDeps) {
     } catch (e) {
       console.error('[mcp] verify_payee failed', e)
       return toolError('verification unavailable; treat this payee as unverified')
+    }
+  })
+  server.registerTool('verify_payment_request', {
+    description: 'Before an AI agent pays an MPP (HTTP 402) request: is the recipient the verified wallet of the service it means to pay? Pass the 402 challenge\'s recipient, the service domain, and any split recipients. Returns allow true/false with the reason; never pay when allow is false.',
+    inputSchema: {
+      recipient: z.string().max(100).describe('The challenge\'s primary recipient address (0x…)'),
+      domain: z.string().max(253).optional().describe('The service domain the agent means to pay, e.g. api.acme.com'),
+      splits: z.array(z.string().max(100)).max(10).optional().describe('Split recipient addresses from the challenge, if any'),
+    },
+    annotations: READ_ONLY,
+  }, async ({ recipient, domain, splits }) => {
+    const all = [recipient, ...(splits ?? [])]
+    if (!all.every((a) => isAddress(a.trim()))) return toolError('invalid address')
+    try {
+      // the primary is checked against the service domain; splits only need to be active Bound-verified wallets
+      const checks: RecipientCheck[] = []
+      for (const [i, raw] of all.entries()) {
+        const address = getAddress(raw.trim())
+        const r = await verifyService(deps, { address, domain: i === 0 ? domain || undefined : undefined })
+        checks.push({ recipient: { address, role: i === 0 ? 'primary' : 'split', amount: '' }, verdict: r.verdict, action: r.action, payee: r.payee ? { legalName: r.payee.legalName, domain: r.payee.domain } : null, allowed: false })
+      }
+      return json(decidePayment(checks))
+    } catch (e) {
+      if (e instanceof HttpError && e.status === 400) return toolError('invalid domain')
+      console.error('[mcp] verify_payment_request failed', e)
+      return toolError('verification unavailable; do not pay this request')
     }
   })
   server.registerTool('lookup_payee', {
