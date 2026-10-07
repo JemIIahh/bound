@@ -10,7 +10,7 @@ import { demoApiRuns, orgs, payees } from '../src/db/schema'
 import { createApp, finalize } from '../src/app'
 import { encryptSecret, sha256 } from '../src/crypto'
 import { deriveMppSecret, loadConfig } from '../src/config'
-import { DEMO_API_DATA, mountDemoApi, type DemoApiInject } from '../src/routes/demo-api'
+import { DEMO_API_DATA, mountDemoApi, serviceWording, type DemoApiInject } from '../src/routes/demo-api'
 import { nowSeconds } from '../src/services/events'
 
 // The public testnet demo deployment (README): Acme Ltd's verified wallet and the lab lookalike (same first and last 4 hex chars).
@@ -185,6 +185,47 @@ describe('POST /v1/demo/api-runs', () => {
     expect(f.requests).toHaveLength(1)
     expect(sendEvidence).not.toHaveBeenCalled()
     expect(rows(db)).toEqual([expect.objectContaining({ hijacked: 1, guardOff: 0, outcome: 'blocked_by_bound', txHash: null })])
+  })
+
+  test('hijacked API, guard on: the lookalike verdict reads as a payment request, never as an invoice', async () => {
+    const pay = vi.fn(async () => 'cred')
+    const f = fakeClient(pay)
+    const { app } = setup({ inject: { paymentClient: f.factory } })
+    const res = await run(app, { hijacked: true, guardOff: false })
+    expect(res.body.outcome).toBe('blocked_by_bound')
+    const check = res.body.steps.find((s: { kind: string }) => s.kind === 'check')
+    // the same findings as an invoice check (core's wording is untouched), reworded for the page
+    expect(check.data.reasons.map((r: { code: string }) => r.code)).toEqual(expect.arrayContaining(['lookalike_address', 'claims_verified_payee']))
+    expect(check.data.reasons.find((r: { code: string }) => r.code === 'claims_verified_payee').detail)
+      .toBe(`The payment request is for Acme Ltd (verified wallet ${ACME}) but pays an unverified address`)
+    for (const s of res.body.steps) {
+      expect(s.text).not.toMatch(/invoice/i)
+      expect(JSON.stringify(s.data ?? null)).not.toMatch(/invoice/i)
+    }
+    expect(res.body.message).not.toMatch(/invoice/i)
+    expect(pay).not.toHaveBeenCalled()
+  })
+
+  test('serviceWording rewords every invoice-worded reason detail for a payment request', () => {
+    expect(serviceWording(`Invoice claims to be Acme Ltd (verified wallet ${ACME}) but pays an unverified address`))
+      .toBe(`The payment request is for Acme Ltd (verified wallet ${ACME}) but pays an unverified address`)
+    expect(serviceWording('Invoice name uses look-alike characters')).toBe('The name uses look-alike characters')
+    expect(serviceWording('Invoice sent from acme.example, which belongs to Acme Ltd')).toBe('acme.example belongs to Acme Ltd')
+    expect(serviceWording('Invoice sent from data.acme.example; registered domain is acme.example')).toBe('data.acme.example is not the registered domain (acme.example)')
+    expect(serviceWording('No verified company is registered for this address')).toBe('No verified company is registered for this address')
+    expect(serviceWording('an unforeseen invoice rule')).not.toMatch(/invoice/i)
+  })
+
+  test("guard on, Bound's check fails: blocked before signing, and the error text stays off the page", async () => {
+    const pay = vi.fn(async () => 'cred')
+    const f = fakeClient(pay)
+    const resolveRecipient = vi.fn(async () => { throw new Error('rpc down at https://rpc.internal/?key=secret') })
+    const { app } = setup({ inject: { paymentClient: f.factory }, ops: { resolveRecipient } })
+    const res = await run(app, { hijacked: false, guardOff: false })
+    expect(res.body.outcome).toBe('blocked_by_bound')
+    expect(res.body.steps.find((s: { kind: string }) => s.kind === 'decision').data).toEqual({ allow: false, reason: `could not verify recipient ${ACME}` })
+    expect(JSON.stringify(res.body)).not.toMatch(/rpc|secret/)
+    expect(pay).not.toHaveBeenCalled()
   })
 
   test('hijacked API, guard off: the payment is attempted, Tempo refuses it (CallNotAllowed), and the evidence tx is linked', async () => {

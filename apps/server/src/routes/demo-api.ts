@@ -162,6 +162,26 @@ function describeChallenge(c: { method: string; intent: string; request: Record<
   }
 }
 
+/**
+ * verifyPayee words some reasons for an invoice ("Invoice claims to be…"). A paid API is not an invoice, so the run rewords
+ * them for a payment request; core's wording is left alone. Whatever the rule, the word "invoice" never reaches the page.
+ */
+const SERVICE_WORDING: [RegExp, string][] = [
+  [/^Invoice claims to be (.+) \(verified wallet (0x[0-9a-fA-F]{40})\) but pays an unverified address$/, 'The payment request is for $1 (verified wallet $2) but pays an unverified address'],
+  [/^Invoice name uses look-alike characters$/, 'The name uses look-alike characters'],
+  [/^Invoice sent from (\S+), which belongs to (.+)$/, '$1 belongs to $2'],
+  [/^Invoice sent from (\S+); registered domain is (\S+)$/, '$1 is not the registered domain ($2)'],
+]
+export function serviceWording(detail: string): string {
+  const rule = SERVICE_WORDING.find(([re]) => re.test(detail))
+  return (rule ? detail.replace(rule[0], rule[1]) : detail).replace(/invoice/gi, 'payment request')
+}
+
+/** The decision's reason for the page: decidePayment's sentence, minus a failed check's error text (that stays in the server log). */
+function pageReason(d: GuardDecision): string {
+  return serviceWording(d.reason.replace(/^(could not verify [^:]+):[\s\S]*$/, '$1'))
+}
+
 function checkText(c: GuardDecision['checks'][number]): string {
   const who = c.recipient.address
   const forWhom = c.recipient.role === 'primary' ? DEMO_API_SERVICE : 'any verified business'
@@ -257,12 +277,14 @@ export async function runApiDemo(
       }
       const guarded = createGuardedFetch({
         bound, mppx: watched, serviceDomain: DEMO_API_SERVICE, expectedChainId: TESTNET_CHAIN_ID,
+        // the page's steps come from the guard's decision; Bound's reasons are reworded for a payment request
         onDecision: (d) => {
           for (const c of d.checks) {
-            const reasons = verified.get(c.recipient.address.toLowerCase())?.reasons ?? []
+            const reasons = (verified.get(c.recipient.address.toLowerCase())?.reasons ?? []).map((r) => ({ code: r.code, detail: serviceWording(r.detail) }))
             step('check', checkText(c), { address: c.recipient.address, role: c.recipient.role, verdict: c.verdict, payee: c.payee, reasons })
           }
-          step('decision', d.allow ? 'Bound allows the payment: every recipient is verified.' : `Bound blocks the payment before anything is signed: ${d.reason}.`, { allow: d.allow, reason: d.reason })
+          const reason = pageReason(d)
+          step('decision', d.allow ? 'Bound allows the payment: every recipient is verified.' : `Bound blocks the payment before anything is signed: ${reason}.`, { allow: d.allow, reason })
         },
       })
       res = await guarded(url, init)
@@ -282,7 +304,7 @@ export async function runApiDemo(
   } catch (e) {
     if (isPaymentBlocked(e)) {
       step('result', 'Nothing was signed and no money moved.')
-      return done('blocked_by_bound', `Bound stopped the payment before signing: ${e.decision.reason}.`)
+      return done('blocked_by_bound', `Bound stopped the payment before signing: ${pageReason(e.decision)}.`)
     }
     if (signing && decodeTempoError(e).code === 'CallNotAllowed') {
       // Tempo refused it while the transaction was prepared: nothing was broadcast, so there is no hash. With the guard off, the
