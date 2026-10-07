@@ -177,7 +177,15 @@ The attack lab (`POST /v1/lab/:orgId/run`) runs the agent on an attacker-written
 pnpm --filter @bound/server demo:public-org   # fresh org, demo root, 50 USD/day; writes DEMO_PUBLIC_ORG_ID, then restart the server
 ```
 
-It creates the org through the API (`BOUND_API_URL`, default the local server), authorizes its agent key with the demo root, and records the id (and the org token, never printed) in `apps/server/.env`; it refuses to replace an existing one without `--replace`. On a hosted server, point `BOUND_API_URL` at it and set `DEMO_PUBLIC_ORG_ID` in its environment. The new key's allowlist starts empty of payees, so a guarded public run can block or ask for approval but pays no one until a human approves a payee for that org.
+It creates the org through the API (`BOUND_API_URL`, default the local server), authorizes its agent key with the demo root, and records the id (and the org token, never printed) in `apps/server/.env`; it refuses to replace an existing one without `--replace`. On a hosted server, point `BOUND_API_URL` at it and set `DEMO_PUBLIC_ORG_ID` in its environment.
+
+The new key's allowlist starts with no payees. `demo:public-allow-acme` adds the Acme demo payee once (the demo root signs it, testnet only), so honest public runs **pay real testnet money to Acme**: the "Real Acme invoice" preset pays 12.50 pathUSD and a paid-API run 0.01 pathUSD (an invoice a visitor writes to Acme's verified wallet pays its own amount). Both kinds of run share the org key's 50 pathUSD/day spending limit, so a large invoice can use up the day and later payments fail until the period rolls over. Unverified wallets are still never paid: Bound blocks them or asks for approval, and with Bound off Tempo refuses them (`CallNotAllowed`).
+
+```bash
+pnpm --filter @bound/server demo:public-allow-acme   # once per public demo org; prints the allowlist tx, "Nothing sent" if Acme is already on it
+```
+
+It needs `TEMPO_NETWORK=testnet`, `DEMO_PUBLIC_ORG_ID`, `DEMO_PUBLIC_ORG_TOKEN`, `DEMO_PAYEE_ADDRESS` and `DEMO_ROOT_PRIVATE_KEY`, and refuses the filmed org and a key with no recipient restriction. A **hosted** server has its own public demo org (created with `demo:public-org` against it), and that org needs the script too: run it with `BOUND_API_URL` pointing at the hosted server and that org's `DEMO_PUBLIC_ORG_ID` and `DEMO_PUBLIC_ORG_TOKEN` in the environment. Until then its honest paid-API runs end "blocked by Tempo".
 
 - `GET /v1/demo`: whether a run can start (`ready`, `unavailable`, `offline` or `busy`), the per-hour limit and the 4,000-character invoice cap.
 - `POST /v1/demo/runs` `{ text, guardOff }` → `202 { runId }`, a 128-bit id. `503` when `DEMO_PUBLIC_ORG_ID` isn't set up (no fallback to `DEMO_ORG_ID`) or `ANTHROPIC_API_KEY` is empty, `429` past `DEMO_RUNS_PER_IP_HOUR` or `DEMO_RUNS_PER_DAY`, `400` for a bad body (which doesn't spend a run).
