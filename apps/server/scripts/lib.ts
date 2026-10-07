@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { config as loadDotenv, parse as parseDotenv } from 'dotenv'
 import { createClient, http, publicActions, walletActions, type Address, type Hex } from 'viem'
 import { Abis, Account } from 'viem/tempo'
-import { getNetwork, publicClientFor } from '@bound/core'
+import { getNetwork, publicClientFor, withRecipient } from '@bound/core'
 
 export const SERVER_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 /** Git-ignored. Holds throwaway testnet keys; never commit it. */
@@ -162,4 +162,13 @@ export async function createAuthorizedDemoOrg(api: BoundApi, root: DemoRootClien
   const authTx = await signAsRoot(root, created.authorizeCall)
   await api('POST', `/v1/orgs/${created.org.id}/authorized`, { txHash: authTx }, created.token)
   return { orgId: created.org.id as string, token: created.token as string, authTx }
+}
+
+/**
+ * The allowlist that also lets the key pay `add`: the live list with the root sentinel kept (restored if missing) plus `add`.
+ * Null when `add` is already allowed (nothing to send). Never empty; throws AllowlistError when the list is full.
+ */
+export function allowlistWith(live: Address[], root: Address, add: Address): Address[] | null {
+  if (live.some((a) => a.toLowerCase() === add.toLowerCase())) return null
+  return withRecipient(withRecipient(live, root), add)
 }

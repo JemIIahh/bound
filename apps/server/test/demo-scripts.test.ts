@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest'
-import { createAuthorizedDemoOrg, DEMO_LIMIT_USD, DEMO_PERIOD_SECONDS } from '../scripts/lib'
+import { allowlistWith, createAuthorizedDemoOrg, DEMO_LIMIT_USD, DEMO_PERIOD_SECONDS } from '../scripts/lib'
 
 const ROOT = '0x06dc65C749734F95534BA0102aA629974e8F7943'
 const TX = '0x' + 'cd'.repeat(32)
@@ -31,5 +31,19 @@ describe('createAuthorizedDemoOrg (rehearse --fresh-org, demo:public-org)', () =
     }
     expect(api).not.toHaveBeenCalled()
     expect(root.sendTransactionSync).not.toHaveBeenCalled()
+  })
+})
+
+describe('allowlistWith (demo:public-allow-acme)', () => {
+  const ACME = '0xc1a53DA961B7A3A62db84Ae889f57fa818d3C426'
+  const OTHER = '0x' + '77'.repeat(20)
+  test('keeps the live list and the root sentinel and adds the payee; null when it is already allowed', () => {
+    expect(allowlistWith([ROOT], ROOT, ACME)).toEqual([ROOT, ACME])
+    expect(allowlistWith([ROOT, OTHER] as any, ROOT, ACME)).toEqual([ROOT, '0x7777777777777777777777777777777777777777', ACME])
+    expect(allowlistWith([ROOT, ACME.toLowerCase()] as any, ROOT, ACME)).toBeNull()
+  })
+  test('restores a missing root sentinel and never produces an empty list', () => {
+    expect(allowlistWith([], ROOT, ACME)).toEqual([ROOT, ACME])
+    expect(allowlistWith([OTHER] as any, ROOT, ACME)).toEqual(['0x7777777777777777777777777777777777777777', ROOT, ACME])
   })
 })
