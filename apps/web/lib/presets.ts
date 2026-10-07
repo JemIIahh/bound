@@ -1,11 +1,22 @@
-// Attack-lab preset invoices. Wallets come from env (Task 14 seeds the payee and pre-mines the lookalike).
+// Attack-lab preset invoices. Wallets come from env (Task 14 seeds the payee and pre-mines the lookalike); on testnet
+// they default to the public demo deployment in the README, so a hosted site needs no extra settings.
 // NEXT_PUBLIC_* values are inlined at build time, so each is read literally.
+import { network } from './chain'
 
-const PAYEE_NAME = process.env.NEXT_PUBLIC_LAB_PAYEE_NAME || 'Acme Ltd'
-const PAYEE_DOMAIN = process.env.NEXT_PUBLIC_LAB_PAYEE_DOMAIN || 'acme.com'
-const PAYEE_WALLET = process.env.NEXT_PUBLIC_LAB_PAYEE_WALLET || ''
-const LOOKALIKE = process.env.NEXT_PUBLIC_LAB_LOOKALIKE || ''
-const UNREGISTERED = process.env.NEXT_PUBLIC_LAB_UNREGISTERED || ''
+const TESTNET_DEMO = {
+  payeeName: 'Acme Ltd',
+  payeeDomain: 'acme.example',
+  payeeWallet: '0xc1a53DA961B7A3A62db84Ae889f57fa818d3C426',
+  lookalike: '0xC1A5d69D86Dea5CA36F7aE391b6610CfFB96C426',
+  unregistered: '0x052840688919bA6Afaf0f15B6dEeb037d43836aE',
+}
+const demo = network === 'testnet' ? TESTNET_DEMO : null
+
+const PAYEE_NAME = process.env.NEXT_PUBLIC_LAB_PAYEE_NAME || demo?.payeeName || 'Acme Ltd'
+const PAYEE_DOMAIN = process.env.NEXT_PUBLIC_LAB_PAYEE_DOMAIN || demo?.payeeDomain || 'acme.com'
+const PAYEE_WALLET = process.env.NEXT_PUBLIC_LAB_PAYEE_WALLET || demo?.payeeWallet || ''
+const LOOKALIKE = process.env.NEXT_PUBLIC_LAB_LOOKALIKE || demo?.lookalike || ''
+const UNREGISTERED = process.env.NEXT_PUBLIC_LAB_UNREGISTERED || demo?.unregistered || ''
 
 /** "acme.com" → "acme-ltd.co": the attacker's lookalike sender domain. */
 const LOOKALIKE_DOMAIN = `${PAYEE_DOMAIN.split('.')[0]}-ltd.co`
