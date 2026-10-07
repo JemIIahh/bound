@@ -6,6 +6,7 @@ import { network } from '@/lib/chain'
 import { PRESETS, type Preset } from '@/lib/presets'
 import { Pill } from '@/components/atoms'
 import { ResultPlaceholder, RunResult } from '@/components/LabRun'
+import { DemoNotice, Switch, noticeFor, type Notice } from '@/components/DemoControls'
 import { PageHead } from '@/components/PageHead'
 import { card, cardTitle, errorText, fieldClass, hint, primaryBtn, smallBtn, wrap } from '@/components/ui'
 
@@ -13,18 +14,6 @@ import { card, cardTitle, errorText, fieldClass, hint, primaryBtn, smallBtn, wra
 const AVAILABLE = PRESETS.filter((p) => !p.missing)
 
 type Run = { id: string; title?: string; guardOff: boolean }
-type Notice = { tone: 'amber' | 'grey'; title: string; text: string; /** no run can start: Run stays disabled */ blocking: boolean }
-
-/** Calm copy for a demo that can't run right now. The server's own message is shown as is. */
-function noticeFor(code: string | undefined, status: number, message: string): Notice {
-  if (code === 'busy') return { tone: 'amber', title: 'Busy day', text: message, blocking: true }
-  if (status === 429) return { tone: 'amber', title: 'That’s the limit for now', text: message, blocking: false }
-  // no agent key, no public demo org, or a server that doesn't serve the demo: the same calm offline state
-  if (code === 'offline' || code === 'unavailable') return { tone: 'grey', title: 'Demo offline', text: `${message} Try again in a little while.`, blocking: true }
-  if (status === 404) return { tone: 'grey', title: 'Demo offline', text: 'The public demo only runs on Tempo testnet.', blocking: true }
-  if (status === 0) return { tone: 'grey', title: 'Can’t reach the demo', text: 'The demo server isn’t answering. Try again in a little while.', blocking: false }
-  return { tone: 'grey', title: 'Something went wrong', text: message, blocking: false }
-}
 
 /** The public attack lab: no wallet, no org. Runs go to the server's demo company (POST /v1/demo/runs). */
 export function TryDemo() {
@@ -155,7 +144,13 @@ export function TryDemo() {
             />
           </div>
 
-          <SoftwareSwitch on={softwareOn} onChange={setSoftwareOn} />
+          <Switch
+            id="software"
+            label="Bound software"
+            text="Switch it off to skip Bound's checks. The agent then pays whatever it's told, and only Tempo's key rules remain."
+            on={softwareOn}
+            onChange={setSoftwareOn}
+          />
 
           <div className="flex flex-col gap-3">
             <button type="submit" disabled={busy || !text.trim() || !!notice?.blocking} className={primaryBtn}>
@@ -175,46 +170,5 @@ export function TryDemo() {
         </div>
       </div>
     </main>
-  )
-}
-
-function SoftwareSwitch({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
-  return (
-    <div className="flex items-start justify-between gap-4 border-t border-line2 pt-6">
-      <div className="min-w-0">
-        <p id="software-label" className="text-[15px] font-semibold text-fg">
-          Bound software
-        </p>
-        <p className={`mt-1 ${hint}`}>Switch it off to skip Bound&apos;s checks. The agent then pays whatever it&apos;s told, and only Tempo&apos;s key rules remain.</p>
-      </div>
-      <div className="mt-0.5 flex shrink-0 items-center gap-3">
-        <span className="w-6 text-right text-[15px] font-semibold text-fg" aria-hidden="true">
-          {on ? 'On' : 'Off'}
-        </span>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={on}
-          aria-labelledby="software-label"
-          onClick={() => onChange(!on)}
-          className={`relative h-7 w-12 shrink-0 rounded-full transition ${on ? 'bg-ok' : 'bg-[#2A2E36]'}`}
-        >
-          <span className={`absolute top-1/2 h-5 w-5 -translate-y-1/2 rounded-full transition-all ${on ? 'left-[24px] bg-bg' : 'left-[4px] bg-fg3'}`} />
-        </button>
-      </div>
-    </div>
-  )
-}
-
-/** A calm status line (rate limit, daily cap, offline): not an error the visitor caused. */
-function DemoNotice({ notice }: { notice: Notice }) {
-  return (
-    <div role="status" className="flex gap-3 rounded-2xl border border-line bg-raised px-5 py-4">
-      <span className={`mt-[9px] h-2 w-2 shrink-0 rounded-full ${notice.tone === 'amber' ? 'bg-amber' : 'bg-fg3'}`} aria-hidden="true" />
-      <div className="min-w-0">
-        <p className="text-[15px] font-semibold text-fg">{notice.title}</p>
-        <p className="mt-0.5 text-[14.5px] leading-relaxed text-fg2">{notice.text}</p>
-      </div>
-    </div>
   )
 }
