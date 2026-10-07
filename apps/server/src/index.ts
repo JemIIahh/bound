@@ -29,5 +29,5 @@ app.use('/v1', invoicesRouter(deps))
 app.use('/v1', signupsRouter(deps))
 if (!mountLab(app, deps)) console.log('attack lab disabled (mainnet without LAB_ENABLED=true)')
 if (!mountDemo(app, deps)) console.log('public demo disabled (testnet only)')
-mountMcp(app, deps) // public, read-only: verify_payee + lookup_payee only
+mountMcp(app, deps) // public, read-only: verify_payee, verify_payment_request + lookup_payee only
 finalize(app).listen(config.port, () => console.log(`bound server on :${config.port} (${config.network})`))
