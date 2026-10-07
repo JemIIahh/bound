@@ -6,11 +6,17 @@ import type { Config } from './config'
 
 export type AppDeps = { db: Db; chain: Chain; config: Config }
 
+/** WEB_ORIGIN: '*', one origin, or a comma-separated list. Trailing slashes are dropped: browsers send origins without one. */
+export function corsOrigin(webOrigin: string): true | string[] {
+  if (webOrigin.trim() === '*') return true
+  return webOrigin.split(',').map((o) => o.trim().replace(/\/+$/, '')).filter(Boolean)
+}
+
 export function createApp(deps: AppDeps) {
   const app = express()
   // One proxy hop (Railway's edge): req.ip is the client, so per-IP rate limits work; `true` would trust spoofable X-Forwarded-For chains.
   app.set('trust proxy', 1)
-  app.use(cors({ origin: deps.config.webOrigin === '*' ? true : deps.config.webOrigin }))
+  app.use(cors({ origin: corsOrigin(deps.config.webOrigin) }))
   app.use(express.json({ limit: '12mb' }))
   app.get('/health', (_req, res) => { res.json({ ok: true, network: deps.chain.network }) })
   return app
