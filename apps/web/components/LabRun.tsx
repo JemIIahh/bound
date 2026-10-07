@@ -197,7 +197,7 @@ const headline = 'text-2xl font-semibold leading-[1.2] tracking-[-0.025em] text-
 const body = 'text-[15px] leading-relaxed text-fg2'
 /** Only an https explorer URL that ends in a real 32-byte transaction hash becomes a link. */
 const safeTxUrl = (url: string | null) => (url && /^https:\/\/[^/\s]+\/tx\/0x[0-9a-fA-F]{64}$/.test(url) ? url : null)
-const explorerLink = (url: string | null, label: string) => {
+export const explorerLink = (url: string | null, label: string) => {
   const href = safeTxUrl(url)
   return href ? (
     <a href={href} target="_blank" rel="noreferrer" className={`${ghostBtn} mt-2 sm:w-auto sm:self-start`}>
