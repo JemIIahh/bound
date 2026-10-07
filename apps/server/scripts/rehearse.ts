@@ -5,15 +5,21 @@
 //  4. guard-off injected invoice (attack lab)   → event chain_rejected with a mined, reverted tx
 //  5. compromised real domain (unregistered wallet claiming Acme from billing@<acme domain>)
 //                                               → blocked, verdict LOOKALIKE, reason claims_verified_payee
+// Paid API (MPP), through POST /v1/demo/api-runs on the public demo org (no model involved):
+//  6. honest API, Bound on                      → paid 0.01 pathUSD to Acme (receipt checked onchain)
+//  7. hijacked API, Bound on                    → blocked_by_bound, check LOOKALIKE, nothing signed
+//  8. hijacked API, Bound off                   → blocked_by_tempo (CallNotAllowed); a linked evidence tx must have reverted
 // then prints a summary table with explorer links.
 // Needs: the server running with the same apps/server/.env (ANTHROPIC_API_KEY set: the agent reads the
 // invoices), seed-demo.ts and mine-lookalike.ts already run. Scenario 1 needs an org that has never paid
 // Acme: pass --fresh-org to create and authorize a new demo org (same demo root) through the API.
+// Scenarios 6-8 need DEMO_PUBLIC_ORG_ID (demo:public-org) with Acme on its allowlist (demo:public-allow-acme);
+// without DEMO_PUBLIC_ORG_ID they are skipped, and the table says so.
 // Usage: TEMPO_NETWORK=testnet tsx scripts/rehearse.ts [--fresh-org]
 import { getAddress, parseEventLogs, type Address, type Hex } from 'viem'
 import { privateKeyToAddress } from 'viem/accounts'
 import { Abis } from 'viem/tempo'
-import { memoFromInvoice, txUrl } from '@bound/core'
+import { formatAmount, memoFromInvoice, txUrl } from '@bound/core'
 import { assertTestnetChain, boundApi, createAuthorizedDemoOrg, demoRootClient, die, need, needKey, requireTestnet, SERVER_ENV, setEnv, signAsRoot } from './lib'
 
 const { net, pub } = requireTestnet()
@@ -93,9 +99,10 @@ async function memoOnChain(hash: Hex) {
   return { status: rc.status, memo: logs[0]?.args?.memo as Hex | undefined, to: logs[0]?.args?.to as Address | undefined, amount: logs[0]?.args?.amount as bigint | undefined }
 }
 
-type Row = { n: number; scenario: string; expected: string; got: string; pass: boolean; link: string }
+type Row = { n: number; scenario: string; expected: string; got: string; pass: boolean; link: string; skipped?: boolean }
 const rows: Row[] = []
-const record = (r: Row) => { rows.push(r); console.log(`${r.pass ? 'PASS' : 'FAIL'} ${r.n}. ${r.scenario}: ${r.got}${r.link ? ` ${r.link}` : ''}`) }
+const resultOf = (r: Row) => (r.skipped ? 'SKIP' : r.pass ? 'PASS' : 'FAIL')
+const record = (r: Row) => { rows.push(r); console.log(`${resultOf(r)} ${r.n}. ${r.scenario}: ${r.got}${r.link ? ` ${r.link}` : ''}`) }
 const verdictOf = (inv: any) => inv.verdict?.verdict ?? '—'
 const scenario = async (n: number, name: string, expected: string, fn: () => Promise<Omit<Row, 'n' | 'scenario' | 'expected'>>) => {
   try { record({ n, scenario: name, expected, ...(await fn()) }) } catch (e) { record({ n, scenario: name, expected, got: `error: ${(e as Error).message}`, pass: false, link: '' }) }
@@ -156,11 +163,60 @@ await scenario(5, 'Compromised real domain (new wallet claims Acme)', 'blocked, 
   return { got: `${inv.status} (verdict ${verdictOf(inv)}; reasons ${codes.join(', ')})`, pass, link: '' }
 })
 
+// ---- paid API (MPP) ----
+// The public demo org (never the filmed one) buys the demo API's price index; the server runs the whole purchase and answers
+// with every step. Real testnet transfers: 0.01 pathUSD to Acme when honest, nothing (or a reverted evidence tx) when hijacked.
+const publicOrgId = process.env.DEMO_PUBLIC_ORG_ID
+type ApiRun = { steps: { kind: string; text: string; data?: any }[]; outcome: string; recipient: string; txHash: Hex | null; txUrl: string | null; message: string }
+const apiRun = (hijacked: boolean, guardOff: boolean): Promise<ApiRun> => api('POST', '/v1/demo/api-runs', { hijacked, guardOff })
+const stepOf = (r: ApiRun, kind: string) => r.steps.find((s) => s.kind === kind)
+const apiScenario: typeof scenario = async (n, name, expected, fn) => {
+  if (publicOrgId) return scenario(n, name, expected, fn)
+  record({ n, scenario: name, expected, got: 'skipped: DEMO_PUBLIC_ORG_ID is not set (run demo:public-org, then demo:public-allow-acme)', pass: false, link: '', skipped: true })
+}
+
+/** The pathUSD transfer to `to` in a receipt (Transfer or TransferWithMemo), with the receipt's status. */
+async function transferTo(hash: Hex, to: Address) {
+  const rc = await pub.getTransactionReceipt({ hash })
+  const logs = parseEventLogs({ abi: Abis.tip20, logs: rc.logs }) as any[]
+  const t = logs.find((l) => (l.eventName === 'Transfer' || l.eventName === 'TransferWithMemo') && getAddress(l.address) === getAddress(net.token) && l.args?.to && getAddress(l.args.to) === to)
+  return { status: rc.status, amount: t?.args?.amount as bigint | undefined }
+}
+
+await apiScenario(6, 'Paid API, honest (Bound on)', 'paid 0.01 pathUSD to Acme, receipt success', async () => {
+  const r = await apiRun(false, false)
+  const check = stepOf(r, 'check')
+  const t = r.txHash ? await transferTo(r.txHash, payee) : null
+  const pass = r.outcome === 'paid' && getAddress(r.recipient) === payee && check?.data?.verdict === 'MATCH' && stepOf(r, 'decision')?.data?.allow === true
+    && !!stepOf(r, 'sign') && t?.status === 'success' && t.amount === 10_000n
+  return { got: `${r.outcome} (check ${check?.data?.verdict ?? '—'}; receipt ${t?.status ?? 'none'}${t?.amount !== undefined ? `, ${formatAmount(t.amount)} pathUSD to ${payeeName}` : ''})`, pass, link: r.txUrl ?? '' }
+})
+
+await apiScenario(7, 'Paid API, hijacked (Bound on)', 'blocked_by_bound, LOOKALIKE, nothing signed', async () => {
+  const r = await apiRun(true, false)
+  const check = stepOf(r, 'check')
+  const signed = !!stepOf(r, 'sign')
+  const saysInvoice = /invoice/i.test(JSON.stringify(r.steps) + r.message)
+  const pass = r.outcome === 'blocked_by_bound' && !signed && check?.data?.verdict === 'LOOKALIKE' && getAddress(r.recipient) === lookalike && r.txHash === null && !saysInvoice
+  return { got: `${r.outcome} (check ${check?.data?.verdict ?? '—'}; ${signed ? 'SIGNED' : 'nothing signed'}${saysInvoice ? '; a step says "invoice"' : ''})`, pass, link: '' }
+})
+
+await apiScenario(8, 'Paid API, hijacked, Bound off', 'blocked_by_tempo (CallNotAllowed), tx reverted', async () => {
+  const r = await apiRun(true, true)
+  const code = stepOf(r, 'result')?.data?.code
+  const rc = r.txHash ? await pub.getTransactionReceipt({ hash: r.txHash }) : null
+  // the evidence tx is best effort: without one the refusal still stands, but a linked one must have reverted
+  const pass = r.outcome === 'blocked_by_tempo' && code === 'CallNotAllowed' && !stepOf(r, 'check') && getAddress(r.recipient) === lookalike && (!r.txHash || rc?.status === 'reverted')
+  return { got: `${r.outcome} (${code ?? '—'}; ${r.txHash ? `evidence receipt ${rc?.status ?? 'none'}` : 'no evidence tx linked'})`, pass, link: r.txUrl ?? '' }
+})
+
 // ---- summary ----
-console.log(`\nBound rehearsal · Tempo testnet · org ${orgId} · root ${privateKeyToAddress(rootKey)}\n`)
+console.log(`\nBound rehearsal · Tempo testnet · org ${orgId}${publicOrgId ? ` · public demo org ${publicOrgId}` : ''} · root ${privateKeyToAddress(rootKey)}\n`)
 const w = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + '…' : s.padEnd(n))
 console.log(`${w('#', 3)}${w('scenario', 48)}${w('result', 7)}explorer`)
-for (const r of rows) console.log(`${w(String(r.n), 3)}${w(r.scenario, 48)}${w(r.pass ? 'PASS' : 'FAIL', 7)}${r.link || '—'}`)
-const failed = rows.filter((r) => !r.pass).length
-console.log(failed ? `\n${failed} scenario(s) FAILED` : `\nALL ${rows.length} SCENARIOS PASSED`)
+for (const r of rows) console.log(`${w(String(r.n), 3)}${w(r.scenario, 48)}${w(resultOf(r), 7)}${r.link || '—'}`)
+const failed = rows.filter((r) => !r.pass && !r.skipped).length
+const skipped = rows.filter((r) => r.skipped).length
+const ran = rows.length - skipped
+console.log(failed ? `\n${failed} scenario(s) FAILED` : `\nALL ${ran} SCENARIOS PASSED${skipped ? ` (${skipped} skipped: DEMO_PUBLIC_ORG_ID is not set)` : ''}`)
 process.exit(failed ? 1 : 0)
