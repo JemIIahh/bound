@@ -337,7 +337,7 @@ function OutcomeView({ r }: { r: ApiRunResult }) {
             <Pill tone="green">Paid</Pill>
           </div>
           <p className={`mt-2 ${headline}`}>0.01 pathUSD to Acme Ltd (verified)</p>
-          {r.message && <p className={body}>{r.message}</p>}
+          {r.message && <p className={body}>{richText(r.message)}</p>}
           <AddrLine label="paid to" value={r.recipient} />
           {explorerLink(link, 'View the payment')}
         </div>
@@ -357,7 +357,7 @@ function OutcomeView({ r }: { r: ApiRunResult }) {
             className="my-4 self-center"
           />
           <p className={headline}>$0 moved</p>
-          {r.message && <p className={body}>{r.message}</p>}
+          {r.message && <p className={body}>{richText(r.message)}</p>}
           <AddrLine label="asked to pay" value={r.recipient} />
         </div>
       )
@@ -365,7 +365,7 @@ function OutcomeView({ r }: { r: ApiRunResult }) {
       return (
         <div className="flex flex-col gap-4">
           <BlockedStamp className="my-4 self-center" />
-          {r.message && <p className={body}>{r.message}</p>}
+          {r.message && <p className={body}>{richText(r.message)}</p>}
           <AddrLine label="asked to pay" value={r.recipient} />
           {explorerLink(link, 'View the reverted transaction')}
         </div>
