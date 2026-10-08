@@ -20,6 +20,7 @@ RUN (corepack enable && corepack prepare pnpm@10.26.0 --activate) || npm install
 COPY --from=deps /app /app
 COPY tsconfig.base.json ./
 COPY packages/core packages/core
+COPY packages/sdk packages/sdk
 COPY apps/server apps/server
 RUN mkdir -p /data && chown -R node:node /app /data
 USER node
